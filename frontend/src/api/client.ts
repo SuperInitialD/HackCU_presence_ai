@@ -12,7 +12,8 @@ export interface ParseResumeResponse {
 }
 
 export interface FetchJDResponse {
-  text: string;
+  text: string;       // mapped from backend's "description"
+  description: string;
   title: string;
   company: string;
 }
@@ -20,6 +21,7 @@ export interface FetchJDResponse {
 export interface StartSessionResponse {
   session_id: string;
   first_question: string;
+  opening_message?: string;  // backend alias
   interviewer_name: string;
 }
 
@@ -56,7 +58,8 @@ export const parseResume = async (file: File): Promise<ParseResumeResponse> => {
 
 export const fetchJD = async (url: string): Promise<FetchJDResponse> => {
   const { data } = await api.get<FetchJDResponse>('/fetch-jd', { params: { url } });
-  return data;
+  // Backend returns `description`, normalize to `text` for frontend compatibility
+  return { ...data, text: data.description || data.text || '' };
 };
 
 export const startSession = async (payload: {
@@ -65,7 +68,11 @@ export const startSession = async (payload: {
   job_description?: string;
 }): Promise<StartSessionResponse> => {
   const { data } = await api.post<StartSessionResponse>('/session/start', payload);
-  return data;
+  // Normalize: backend may return opening_message instead of first_question
+  return {
+    ...data,
+    first_question: data.first_question || data.opening_message || "Tell me about yourself.",
+  };
 };
 
 export const respond = async (
