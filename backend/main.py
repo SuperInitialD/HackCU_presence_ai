@@ -63,6 +63,10 @@ class MetricsModel(BaseModel):
 class RespondRequest(BaseModel):
     answer: str
     metrics: Optional[MetricsModel] = None
+    # flat aliases sent by frontend
+    eye_contact: Optional[float] = None
+    stress: Optional[float] = None
+    confidence: Optional[float] = None
 
 
 # ──────────────────────────────────────────────
@@ -109,9 +113,14 @@ async def start_session(body: StartSessionRequest):
         "active": True,
     }
 
+    preset = COMPANY_PRESETS.get(company_key, COMPANY_PRESETS["generic"])
+    interviewer_name = preset.get("interviewer_name", f"{preset['name']} Interviewer")
+
     return {
         "session_id": session_id,
         "opening_message": opening_message,
+        "first_question": opening_message,
+        "interviewer_name": interviewer_name,
     }
 
 
@@ -132,11 +141,17 @@ async def respond_to_session(session_id: str, body: RespondRequest):
         "content": body.answer,
     })
 
+    # Accept both nested metrics object and flat fields from frontend
     metrics_dict = None
     if body.metrics:
         metrics_dict = {
             "eye_contact": body.metrics.eye_contact,
             "stress_score": body.metrics.stress_score,
+        }
+    elif body.eye_contact is not None or body.stress is not None:
+        metrics_dict = {
+            "eye_contact": body.eye_contact if body.eye_contact is not None else 0.5,
+            "stress_score": body.stress if body.stress is not None else 0.3,
         }
 
     try:
@@ -156,11 +171,17 @@ async def respond_to_session(session_id: str, body: RespondRequest):
     })
     session["question_count"] += 1
 
+    question_count = session["question_count"]
+    is_complete = question_count >= 8  # wrap after 8 exchanges
+
     return {
         "message": result["message"],
+        "next_question": result["message"],   # frontend alias
         "follow_up": result["follow_up"],
         "question_number": result["question_number"],
         "feedback_hint": result["feedback_hint"],
+        "is_complete": is_complete,
+        "score": None,
     }
 
 
@@ -208,17 +229,20 @@ async def end_session(session_id: str):
 
 
 @app.post("/api/transcribe")
-async def transcribe_audio(file: UploadFile = File(...)):
+async def transcribe_audio(file: UploadFile = File(None), audio: UploadFile = File(None)):
     """
     Transcribe an uploaded audio file using Groq Whisper.
     Accepts common audio formats: mp3, mp4, wav, m4a, ogg, webm, flac.
     """
-    audio_bytes = await file.read()
+    upload = file or audio
+    if not upload:
+        raise HTTPException(status_code=400, detail="No audio file provided (use field 'file' or 'audio')")
+    audio_bytes = await upload.read()
     if not audio_bytes:
         raise HTTPException(status_code=400, detail="Empty audio file")
 
-    filename = file.filename or "audio.webm"
-    content_type = file.content_type or "audio/webm"
+    filename = upload.filename or "audio.webm"
+    content_type = upload.content_type or "audio/webm"
 
     try:
         transcription = groq_client.audio.transcriptions.create(
