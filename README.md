@@ -93,31 +93,9 @@ Frontend runs on `http://localhost:5173`. API calls proxy to port 8000 automatic
 
 ## Project Structure
 
-```
-backend/
-  main.py              - FastAPI app and all routes
-  interviewer.py       - AI interview engine (Claude, checklist logic, evaluation)
-  vision.py            - MediaPipe face analysis
-  coding.py            - LeetCode problem fetching, hints, code analysis
-  jd_fetcher.py        - Playwright job description scraper
-  resume_parser.py     - PDF resume text extraction
-  company_presets.py   - Company interview personas and style notes
+The backend is a single FastAPI app. `main.py` defines all routes. `interviewer.py` handles everything Claude-related — building prompts, tracking the checklist, generating evaluations. `vision.py` runs MediaPipe on webcam frames. `coding.py` fetches LeetCode problems and handles hints and code analysis. `jd_fetcher.py` is a Playwright scraper for job description URLs. `resume_parser.py` extracts text from uploaded PDFs. `company_presets.py` holds named interview personas.
 
-frontend/src/
-  pages/
-    SetupScreen.tsx    - Interview configuration (mode, resume, JD, company)
-    InterviewRoom.tsx  - Live interview UI (voice recording, TTS, face metrics)
-    ResultsDashboard.tsx - Post-interview results and session recording
-    CodingInterview.tsx  - Coding interview (Monaco editor, LeetCode, AI coaching)
-  hooks/
-    useFaceAnalysis.ts - Webcam frame capture, MediaPipe polling, mic volume
-  lib/
-    video-recorder.ts  - MediaRecorder wrapper with codec detection
-  api/
-    client.ts          - Typed fetch wrappers for all backend endpoints
-  types/
-    index.ts           - Shared TypeScript interfaces
-```
+The frontend is a React SPA with four pages: SetupScreen for configuration, InterviewRoom for the live interview, ResultsDashboard for post-interview results, and CodingInterview for the coding mode. `useFaceAnalysis.ts` handles webcam frame capture and mic volume. `video-recorder.ts` is a thin wrapper around MediaRecorder. `api/client.ts` has typed fetch functions for every backend endpoint.
 
 ---
 
