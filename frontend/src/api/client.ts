@@ -84,6 +84,7 @@ export const startSession = async (payload: {
   job_description?: string;
   github_url?: string;
   linkedin_url?: string;
+  interview_type?: string;
 }): Promise<StartSessionResponse> => {
   const { data } = await api.post<StartSessionResponse>('/session/start', payload);
   // Normalize: backend may return opening_message instead of first_question
