@@ -80,9 +80,9 @@ def _clamp(val, lo=0.0, hi=100.0):
 
 def _eye_contact_score(lms, w, h) -> float:
     """
-    Measure how centred each iris is between its eye corners.
-    iris_offset = |iris_x - eye_midpoint_x| / (eye_width / 2)
-    0 = perfect centre (100 score), 1 = at the corner (0 score).
+    Measure how centred each iris is within its eye (horizontal + vertical).
+    Includes both h_offset (looking left/right) and v_offset (looking up/down).
+    0 = perfect centre (100 score), 1 = at edge (0 score).
     Average the two eyes.
     """
     l_iris = _lm(lms, L_IRIS, w, h)
@@ -90,18 +90,26 @@ def _eye_contact_score(lms, w, h) -> float:
 
     l_inner = _lm(lms, L_EYE_INNER, w, h)
     l_outer = _lm(lms, L_EYE_OUTER, w, h)
+    l_top = _lm(lms, L_EYE_TOP, w, h)
+    l_bot = _lm(lms, L_EYE_BOT, w, h)
     r_inner = _lm(lms, R_EYE_INNER, w, h)
     r_outer = _lm(lms, R_EYE_OUTER, w, h)
+    r_top = _lm(lms, R_EYE_TOP, w, h)
+    r_bot = _lm(lms, R_EYE_BOT, w, h)
 
-    def iris_offset(iris, corner_a, corner_b):
-        mid_x = (corner_a[0] + corner_b[0]) / 2
-        half_w = _dist(corner_a, corner_b) / 2
-        if half_w < 1e-6:
+    def iris_offset_2d(iris, inner, outer, top, bot):
+        mid_x = (inner[0] + outer[0]) / 2
+        mid_y = (top[1] + bot[1]) / 2
+        half_w = _dist(inner, outer) / 2
+        half_h = _dist(top, bot) / 2
+        if half_w < 1e-6 or half_h < 1e-6:
             return 0.0
-        return abs(iris[0] - mid_x) / half_w
+        h_off = abs(iris[0] - mid_x) / half_w
+        v_off = abs(iris[1] - mid_y) / half_h
+        return max(h_off, v_off)  # penalize any deviation (up/down or left/right)
 
-    l_off = iris_offset(l_iris, l_inner, l_outer)
-    r_off = iris_offset(r_iris, r_inner, r_outer)
+    l_off = iris_offset_2d(l_iris, l_inner, l_outer, l_top, l_bot)
+    r_off = iris_offset_2d(r_iris, r_inner, r_outer, r_top, r_bot)
     avg_off = (l_off + r_off) / 2
 
     # Map: 0 offset → 100, 1 offset → 0, clamp beyond
