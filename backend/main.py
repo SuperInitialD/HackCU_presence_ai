@@ -28,6 +28,7 @@ import groq
 from openai import OpenAI
 
 from interviewer import AIInterviewer
+import coding as coding_module
 from resume_parser import parse_pdf, extract_key_info
 from jd_fetcher import fetch_from_url
 from company_presets import COMPANY_PRESETS
@@ -430,6 +431,51 @@ async def get_companies():
         })
 
     return {"companies": companies}
+
+
+# ──────────────────────────────────────────────
+# Coding Interview Routes
+# ──────────────────────────────────────────────
+
+class CodingHintRequest(BaseModel):
+    problem: dict
+    current_code: str
+    hint_level: int = 1
+
+class CodingAnalyzeRequest(BaseModel):
+    problem: dict
+    current_code: str
+    is_periodic: bool = True
+
+
+@app.get("/api/coding/problem")
+async def get_coding_problem(difficulty: str = "medium", slug: Optional[str] = None):
+    """Fetch a LeetCode problem. Returns title, description, starter code, hints."""
+    try:
+        problem = coding_module.fetch_problem(difficulty=difficulty, slug=slug)
+        return problem
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch problem: {str(e)}")
+
+
+@app.post("/api/coding/hint")
+async def get_coding_hint(body: CodingHintRequest):
+    """Get a hint for the current problem at the requested level (1=nudge, 2=approach, 3=walkthrough)."""
+    try:
+        hint = coding_module.get_hint(body.problem, body.current_code, body.hint_level)
+        return {"hint": hint}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get hint: {str(e)}")
+
+
+@app.post("/api/coding/analyze")
+async def analyze_coding(body: CodingAnalyzeRequest):
+    """Analyze current code state. Used for periodic snapshots and on-demand analysis."""
+    try:
+        result = coding_module.analyze_code(body.problem, body.current_code, body.is_periodic)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to analyze code: {str(e)}")
 
 
 # ──────────────────────────────────────────────
