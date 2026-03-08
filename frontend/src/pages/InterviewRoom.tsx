@@ -44,6 +44,7 @@ const InterviewRoom: React.FC = () => {
   const [currentTip, setCurrentTip] = useState('');
   const [isComplete, setIsComplete] = useState(false);
   const [questionCount, setQuestionCount] = useState(0);
+  const [checklist, setChecklist] = useState({ resume: false, profile: false, technical: false, behavioral: false });
   const [metricsHistory, setMetricsHistory] = useState<FaceMetrics[]>([]);
   const [questionResults, setQuestionResults] = useState<QuestionResult[]>([]);
 
@@ -245,6 +246,16 @@ const InterviewRoom: React.FC = () => {
         setCurrentTip(response.feedback_hint);
       }
 
+      // Update checklist from AI response (only allow items to flip true)
+      if (response.checklist) {
+        setChecklist(prev => ({
+          resume: prev.resume || !!response.checklist.resume,
+          profile: prev.profile || !!response.checklist.profile,
+          technical: prev.technical || !!response.checklist.technical,
+          behavioral: prev.behavioral || !!response.checklist.behavioral,
+        }));
+      }
+
       if (response.is_complete) {
         const avgMetric = (key: keyof FaceMetrics) =>
           metricsHistory.length > 0
@@ -280,7 +291,7 @@ const InterviewRoom: React.FC = () => {
           navigate('/results', { state: { results: interviewResults } });
         }, 1500);
       } else if (response.next_question) {
-        setQuestionCount(prev => prev + 1);
+        if (!response.follow_up) setQuestionCount(prev => prev + 1);
         const interviewerMsg: Message = {
           id: Date.now().toString() + '-q',
           role: 'interviewer',
@@ -907,35 +918,44 @@ const InterviewRoom: React.FC = () => {
             )}
           </AnimatePresence>
 
-          {/* Progress */}
+          {/* Coverage Checklist */}
           <div>
-            <div style={{ fontSize: 11, fontWeight: 600, color: '#555577', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>
-              Progress
+            <div style={{ fontSize: 11, fontWeight: 600, color: '#555577', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>
+              Coverage
             </div>
-            <div style={{ display: 'flex', gap: 6 }}>
-              {Array.from({ length: 8 }).map((_, i) => (
-                <div
-                  key={i}
-                  style={{
-                    flex: 1, height: 4,
-                    borderRadius: 2,
-                    background: i < questionCount
-                      ? companyConfig.accentColor
-                      : i === questionCount
-                      ? `${companyConfig.accentColor}55`
-                      : '#2a2a3e',
-                    transition: 'background 0.3s ease',
-                  }}
-                />
-              ))}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {([
+                { key: 'resume', label: 'Background & Resume' },
+                { key: 'profile', label: 'GitHub / LinkedIn' },
+                { key: 'technical', label: 'Technical Challenge' },
+                { key: 'behavioral', label: 'Behavioral Scenario' },
+              ] as const).map(({ key, label }) => {
+                const done = checklist[key];
+                return (
+                  <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{
+                      width: 18, height: 18, borderRadius: 4, flexShrink: 0,
+                      background: done ? companyConfig.accentColor : '#2a2a3e',
+                      border: `1.5px solid ${done ? companyConfig.accentColor : '#3a3a55'}`,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      transition: 'all 0.3s ease',
+                    }}>
+                      {done && <span style={{ color: '#fff', fontSize: 11, fontWeight: 700 }}>✓</span>}
+                    </div>
+                    <span style={{ fontSize: 13, color: done ? '#e8e8f0' : '#555577', transition: 'color 0.3s ease' }}>
+                      {label}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
-            <div style={{ fontSize: 12, color: '#555577', marginTop: 8 }}>
-              Question {questionCount + 1} of ~8
+            <div style={{ fontSize: 11, color: '#555577', marginTop: 10 }}>
+              AI ends the interview when all areas are covered.
             </div>
           </div>
 
           {/* End Early */}
-          {!isComplete && questionCount >= 1 && (
+          {!isComplete && messages.length > 2 && (
             <button
               onClick={() => {
                 const avgMetric = (key: keyof FaceMetrics) =>
