@@ -56,8 +56,8 @@ def _build_system_prompt(
 
     # Pre-compute conditionals — Python 3.11 f-strings cannot use same quote type inside {}
     company_name    = company.strip() if company.strip() else "a software engineering role"
-    resume_display  = resume_display
-    jd_display      = jd_display
+    resume_display  = resume_text.strip() if resume_text.strip() else "No resume provided — ask the candidate to walk you through their background."
+    jd_display      = jd.strip() if jd.strip() else "No job description provided — conduct a general software engineering interview."
 
     if interview_type == "behavioral":
         mode_instruction = "BEHAVIORAL-ONLY: Cover only the 4 behavioral sections. Mark all technical checklist items true immediately."
