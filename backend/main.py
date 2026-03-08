@@ -57,6 +57,7 @@ class StartSessionRequest(BaseModel):
     resume_text: Optional[str] = ""
     github_url: Optional[str] = ""
     linkedin_url: Optional[str] = ""
+    interview_type: Optional[str] = "behavioral"  # behavioral | technical_verbal
 
 
 class MetricsModel(BaseModel):
@@ -95,6 +96,8 @@ async def start_session(body: StartSessionRequest):
     if company_key not in COMPANY_PRESETS:
         company_key = company_raw or "generic"
 
+    interview_type = body.interview_type or "behavioral"
+
     try:
         opening_message = interviewer.start_session(
             session_id=session_id,
@@ -103,6 +106,7 @@ async def start_session(body: StartSessionRequest):
             resume_text=body.resume_text or "",
             github_url=body.github_url or "",
             linkedin_url=body.linkedin_url or "",
+            interview_type=interview_type,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to start session: {str(e)}")
@@ -114,6 +118,7 @@ async def start_session(body: StartSessionRequest):
         "resume_text": body.resume_text or "",
         "github_url": body.github_url or "",
         "linkedin_url": body.linkedin_url or "",
+        "interview_type": interview_type,
         "conversation_history": [
             {"role": "assistant", "content": opening_message}
         ],
