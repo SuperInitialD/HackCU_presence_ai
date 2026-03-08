@@ -19,6 +19,23 @@ def _get_preset(company: str) -> dict:
     return COMPANY_PRESETS.get(key, COMPANY_PRESETS["generic"])
 
 
+def _default_checklist() -> dict:
+    return {
+        "behavioral": {
+            "introduction":   False,  # background, career story, tell me about yourself
+            "experience":     False,  # past roles, key responsibilities, professional history
+            "star_scenario":  False,  # STAR method — conflict, failure, leadership moment
+            "skills_strengths": False, # what they bring, self-assessment, growth areas
+        },
+        "technical": {
+            "concepts":        False, # technical concepts relevant to JD (no coding)
+            "problem_solving": False, # how they approach & break down technical problems
+            "project_dive":    False, # deep dive on a specific past technical project
+            "role_specific":   False, # role-specific knowledge from JD requirements
+        },
+    }
+
+
 def _build_system_prompt(
     company: str,
     jd: str,
@@ -30,79 +47,94 @@ def _build_system_prompt(
     known = preset_key in COMPANY_PRESETS
     preset = _get_preset(company)
 
-    focus_areas_str = "\n".join(f"- {f}" for f in preset["focus_areas"])
-    sample_q_str = "\n".join(f"- {q}" for q in preset["sample_questions"][:4])
-
     company_context = ""
     if not known and company.strip():
-        company_context = f"The candidate is targeting: {company}. Adapt your interview style accordingly."
+        company_context = f"\nThe candidate is targeting: **{company}**. Tailor all questions accordingly."
 
     profile_section = ""
     if github_url or linkedin_url:
-        profile_section = "## Candidate's Online Profiles\n"
+        profile_section = "\n## Candidate Profiles (for context — reference naturally)\n"
         if github_url:
             profile_section += f"- GitHub: {github_url}\n"
         if linkedin_url:
             profile_section += f"- LinkedIn: {linkedin_url}\n"
-        profile_section += "Reference these when relevant — ask about notable projects, contributions, or career history shown there.\n"
 
-    system = f"""You are conducting a real-time mock behavioral interview for {company if company.strip() else 'a software engineering role'}.
-
-## Your Interviewer Persona
-{preset['persona']}
-
-## Interview Style Notes
-{preset['style_notes']}
+    system = f"""You are conducting a structured mock interview for {company if company.strip() else 'a software engineering role'}.
 {company_context}
 
-## Key Focus Areas
-{focus_areas_str}
+## Interviewer Persona
+{preset['persona']}
 
-## Sample Question Types (adapt freely, never read verbatim)
-{sample_q_str}
+## Style
+{preset['style_notes']}
 
-## Candidate's Resume
-{resume_text if resume_text.strip() else "No resume provided — ask the candidate to briefly introduce themselves."}
-
+## Candidate Resume
+{resume_text.strip() if resume_text.strip() else "No resume provided — ask the candidate to walk you through their background."}
 {profile_section}
 ## Job Description
-{jd if jd.strip() else "No specific job description — conduct a general software engineering interview."}
+{jd.strip() if jd.strip() else "No job description provided — conduct a general software engineering interview."}
+
+---
+
+## Interview Structure
+
+You MUST work through these 8 sub-sections in order, completing each before advancing.
+**Do not skip sections. Do not blend behavioral and technical — finish all 4 behavioral items first, then do technical.**
+
+### Part 1 — Behavioral (complete in order)
+1. **introduction** — Background & Introduction: career story, how they got here, what drives them. Reference resume specifics.
+2. **experience** — Professional Experience: dig into 1-2 key past roles or projects. What did they own? What was the impact? Push for specifics.
+3. **star_scenario** — STAR Scenario: ask about a real challenge — conflict with a teammate, a time they failed, a leadership moment. Require Situation/Task/Action/Result structure. Follow up if any part is missing.
+4. **skills_strengths** — Skills & Strengths: what technical and soft skills do they bring? What are they actively improving? Be candid — ask for self-critique.
+
+### Part 2 — Technical (no coding — conceptual and verbal only)
+5. **concepts** — Technical Concepts: 2-3 technical questions directly tied to the JD and resume stack (e.g. system design tradeoffs, CS fundamentals, architecture decisions). No code.
+6. **problem_solving** — Problem-Solving Approach: give them a scenario (from the JD context) and ask how they'd break it down. Probe for structure and depth.
+7. **project_dive** — Project Deep-Dive: pick a project from their resume or GitHub. Ask what they built, their role, the hard parts, what they'd do differently.
+8. **role_specific** — Role-Specific Knowledge: 1-2 questions unique to this role/company from the JD. What do they know about the domain? What would they do in the first 30 days?
+
+---
 
 ## Conversation Rules
 1. Ask ONE question at a time. Never stack questions.
-2. Be concise and conversational — spoken interview, not an essay.
-3. React naturally before transitioning: brief acknowledgment, then next question.
-4. Ask follow-ups when answers are vague or incomplete — don't move on until you have real signal.
-5. Never coach during the interview — save feedback for the evaluation.
-6. Reference the resume, GitHub, or LinkedIn naturally when relevant.
+2. Natural, concise, conversational — this is spoken, not written.
+3. Ask follow-ups if an answer is vague, incomplete, or missing specifics. Follow-ups do NOT advance to the next section — stay until you have genuine signal.
+4. Reference resume, GitHub, LinkedIn naturally. Don't read from them robotically.
+5. No coaching during the interview.
+6. No coding questions. Conceptual only.
 
-## Coverage Checklist
-You must gather clear signal on ALL FOUR areas before ending:
-1. **resume** — candidate's background, past roles, key experiences from their resume
-2. **profile** — their GitHub projects, LinkedIn history, or online work (if provided; otherwise skip this)
-3. **technical** — a technical or role-specific challenge, problem-solving approach
-4. **behavioral** — at least one behavioral scenario (conflict, failure, leadership, collaboration)
+## Ending
+When all 8 sub-sections are marked true: close naturally and warmly. Something like "That wraps things up — it was great getting to know you. You'll hear back soon." Then set end_interview=true.
 
-Track your progress internally. Only set end_interview=true when you have genuine signal on all required areas (skip "profile" if no GitHub/LinkedIn was provided).
-
-When ending: close naturally — "This wraps up our time today. Thank you so much for chatting with me — you'll hear back soon." Do NOT abruptly end or announce you're checking a box.
+---
 
 ## Response Format
-ALWAYS respond with valid JSON in EXACTLY this format (no markdown, no extra text):
+ALWAYS return ONLY valid JSON, no markdown, no extra text:
 {{
-  "message": "your conversational response / next question",
+  "message": "your spoken response / next question",
   "follow_up": true/false,
-  "feedback_hint": "1-sentence internal note NOT shown to candidate",
+  "feedback_hint": "1-sentence internal note not shown to candidate",
   "checklist": {{
-    "resume": true/false,
-    "profile": true/false,
-    "technical": true/false,
-    "behavioral": true/false
+    "behavioral": {{
+      "introduction": true/false,
+      "experience": true/false,
+      "star_scenario": true/false,
+      "skills_strengths": true/false
+    }},
+    "technical": {{
+      "concepts": true/false,
+      "problem_solving": true/false,
+      "project_dive": true/false,
+      "role_specific": true/false
+    }}
   }},
   "end_interview": false
 }}
 
-Set end_interview=true only in the FINAL message (the goodbye). Once set, do not send more questions.
+Rules for checklist:
+- Mark a sub-section true only when you have genuine signal — not just because the candidate said something.
+- Items can only flip from false → true, never back.
+- Set end_interview=true ONLY in the final goodbye message.
 """
     return system
 
@@ -122,13 +154,19 @@ def _parse_response(raw: str) -> dict:
         "message": raw.strip(),
         "follow_up": False,
         "feedback_hint": "",
-        "checklist": {"resume": False, "profile": False, "technical": False, "behavioral": False},
+        "checklist": _default_checklist(),
         "end_interview": False,
     }
 
 
-def _default_checklist() -> dict:
-    return {"resume": False, "profile": False, "technical": False, "behavioral": False}
+def _merge_checklist(current: dict, updates: dict) -> dict:
+    """Merge checklist updates — items can only flip true, never false."""
+    for section in ("behavioral", "technical"):
+        if section in updates and isinstance(updates[section], dict):
+            for key in current.get(section, {}):
+                if updates[section].get(key):
+                    current[section][key] = True
+    return current
 
 
 class AIInterviewer:
@@ -150,14 +188,14 @@ class AIInterviewer:
         self._checklists[session_id] = _default_checklist()
 
         preset = _get_preset(company)
-        has_profile = bool(github_url or linkedin_url)
+        has_resume = bool(resume_text.strip())
 
         opening_instruction = (
-            f"Start the interview. Greet the candidate warmly, introduce yourself briefly as a "
-            f"{preset['name']} interviewer, and open with a natural first question — typically "
-            f"'tell me about yourself' or a specific opener based on their resume. "
-            f"{'You have their GitHub/LinkedIn — you may reference it naturally.' if has_profile else ''}"
-            f" Keep it concise and human."
+            f"Begin the interview. Greet the candidate warmly, briefly introduce yourself as a "
+            f"{preset['name']} interviewer, then open with the Introduction section — typically "
+            f"'tell me about yourself' or a tailored opener based on their resume. "
+            f"{'Reference their background specifically.' if has_resume else ''} "
+            f"Keep it natural and concise."
         )
 
         client = _get_client()
@@ -171,9 +209,8 @@ class AIInterviewer:
         raw = response.content[0].text
         parsed = _parse_response(raw)
 
-        # Update checklist from opening if AI already marked something
         if "checklist" in parsed:
-            self._merge_checklist(session_id, parsed["checklist"])
+            _merge_checklist(self._checklists[session_id], parsed["checklist"])
 
         return parsed.get("message", raw.strip())
 
@@ -191,17 +228,16 @@ class AIInterviewer:
         messages = _history_to_messages(conversation_history)
         messages.append({"role": "user", "content": answer})
 
-        # Inject vision metrics as subtle system context
         if metrics:
             hints = []
             if metrics.get("eye_contact", 1) < 0.4:
-                hints.append("candidate appears less engaged visually")
+                hints.append("candidate appears less engaged — consider a more direct question")
             if metrics.get("stress_score", 0) > 0.7:
-                hints.append("candidate seems stressed — consider a bridging question")
+                hints.append("candidate seems stressed — ease in with a bridging question")
             if hints:
                 messages.append({
                     "role": "user",
-                    "content": f"[SYSTEM — not from candidate: {', '.join(hints)}]"
+                    "content": f"[SYSTEM CONTEXT — not from candidate: {', '.join(hints)}]"
                 })
 
         client = _get_client()
@@ -215,11 +251,10 @@ class AIInterviewer:
         raw = response.content[0].text
         parsed = _parse_response(raw)
 
-        # Merge checklist updates from AI
         if "checklist" in parsed:
-            self._merge_checklist(session_id, parsed["checklist"])
+            _merge_checklist(self._checklists[session_id], parsed["checklist"])
 
-        current_checklist = dict(self._checklists.get(session_id, _default_checklist()))
+        current_checklist = json.loads(json.dumps(self._checklists.get(session_id, _default_checklist())))
 
         question_number = sum(
             1 for msg in conversation_history if msg.get("role") == "assistant"
@@ -237,26 +272,16 @@ class AIInterviewer:
     def end_session(self, session_id: str, conversation_history: list[dict]) -> dict:
         system_prompt = self._system_prompts.get(session_id, "")
 
-        evaluation_prompt = """The interview is complete. Review the full conversation and provide a comprehensive evaluation.
-
-Return ONLY valid JSON in exactly this format:
+        evaluation_prompt = """Interview complete. Evaluate the full conversation and return ONLY valid JSON:
 {
-  "overall_score": {
-    "total": 7.5,
-    "communication": 8.0,
-    "technical_depth": 7.0,
-    "problem_solving": 7.5,
-    "culture_fit": 8.0,
-    "confidence": 7.0
-  },
-  "strengths": ["Specific strength 1 with example", "Specific strength 2", "Specific strength 3"],
-  "areas_for_improvement": ["Specific area 1 with actionable advice", "Specific area 2"],
+  "overall_score": {"total": 7.5, "communication": 8.0, "technical_depth": 7.0, "problem_solving": 7.5, "culture_fit": 8.0, "confidence": 7.0},
+  "strengths": ["Specific strength with example", "Strength 2", "Strength 3"],
+  "areas_for_improvement": ["Specific actionable area 1", "Area 2"],
   "standout_moments": ["Notable moment 1", "Notable moment 2"],
   "hiring_recommendation": "Strong Yes / Yes / Maybe / No",
-  "summary": "2-3 sentence honest assessment written directly to the candidate."
+  "summary": "2-3 honest sentences directly to the candidate referencing specific things they said."
 }
-
-Scores out of 10. Be specific — reference actual things said."""
+Scores out of 10. Be honest and specific."""
 
         messages = _history_to_messages(conversation_history)
         messages.append({"role": "user", "content": evaluation_prompt})
@@ -283,13 +308,6 @@ Scores out of 10. Be specific — reference actual things said."""
             "hiring_recommendation": parsed.get("hiring_recommendation", "Undetermined"),
             "summary": parsed.get("summary", "Evaluation could not be generated."),
         }
-
-    def _merge_checklist(self, session_id: str, updates: dict) -> None:
-        """Only allow checklist items to flip true, never back to false."""
-        current = self._checklists.setdefault(session_id, _default_checklist())
-        for key in ("resume", "profile", "technical", "behavioral"):
-            if updates.get(key):
-                current[key] = True
 
 
 def _history_to_messages(history: list[dict]) -> list[dict]:
