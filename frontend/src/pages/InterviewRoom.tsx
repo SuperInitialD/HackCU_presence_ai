@@ -67,6 +67,7 @@ const InterviewRoom: React.FC = () => {
   const isThinkingRef = useRef(false);
   const autoStartedForRef = useRef<string | null>(null);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [ttsSpeed, setTtsSpeed] = useState(1.2);
   const isSpeakingRef = useRef(false);
   const currentAudioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -86,7 +87,7 @@ const InterviewRoom: React.FC = () => {
         const res = await fetch('/api/tts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text, voice: 'nova' }),
+          body: JSON.stringify({ text, voice: 'nova', speed: ttsSpeed }),
         });
 
         if (!res.ok) throw new Error('TTS request failed');
@@ -252,25 +253,31 @@ const InterviewRoom: React.FC = () => {
       }
 
       // Update checklist from AI response (only allow items to flip true)
+      let updatedChecklist = checklist;
       if (response.checklist) {
         const cl = response.checklist;
-        setChecklist(prev => ({
+        updatedChecklist = {
           behavioral: {
-            introduction:     prev.behavioral.introduction     || !!cl.behavioral?.introduction,
-            experience:       prev.behavioral.experience       || !!cl.behavioral?.experience,
-            star_scenario:    prev.behavioral.star_scenario    || !!cl.behavioral?.star_scenario,
-            skills_strengths: prev.behavioral.skills_strengths || !!cl.behavioral?.skills_strengths,
+            introduction:     checklist.behavioral.introduction     || !!cl.behavioral?.introduction,
+            experience:       checklist.behavioral.experience       || !!cl.behavioral?.experience,
+            star_scenario:    checklist.behavioral.star_scenario    || !!cl.behavioral?.star_scenario,
+            skills_strengths: checklist.behavioral.skills_strengths || !!cl.behavioral?.skills_strengths,
           },
           technical: {
-            concepts:        prev.technical.concepts        || !!cl.technical?.concepts,
-            problem_solving: prev.technical.problem_solving || !!cl.technical?.problem_solving,
-            project_dive:    prev.technical.project_dive    || !!cl.technical?.project_dive,
-            role_specific:   prev.technical.role_specific   || !!cl.technical?.role_specific,
+            concepts:        checklist.technical.concepts        || !!cl.technical?.concepts,
+            problem_solving: checklist.technical.problem_solving || !!cl.technical?.problem_solving,
+            project_dive:    checklist.technical.project_dive    || !!cl.technical?.project_dive,
+            role_specific:   checklist.technical.role_specific   || !!cl.technical?.role_specific,
           },
-        }));
+        };
+        setChecklist(updatedChecklist);
       }
 
-      if (response.is_complete) {
+      // Auto-end: if all visible checklist items are now true, end immediately
+      const allDone = Object.values(updatedChecklist.behavioral).every(Boolean)
+        && Object.values(updatedChecklist.technical).every(Boolean);
+
+      if (response.is_complete || allDone) {
         const avgMetric = (key: keyof FaceMetrics) =>
           metricsHistory.length > 0
             ? metricsHistory.reduce((s, mm) => s + mm[key], 0) / metricsHistory.length
@@ -473,8 +480,22 @@ const InterviewRoom: React.FC = () => {
               ) : `Interview in progress — Question ${questionCount + 1}`}
             </div>
           </div>
+          {/* Pace Slider */}
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 10, color: '#555577', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Pace</span>
+            <input
+              type="range"
+              min={0.8}
+              max={2.0}
+              step={0.1}
+              value={ttsSpeed}
+              onChange={e => setTtsSpeed(parseFloat(e.target.value))}
+              style={{ width: 72, accentColor: companyConfig.accentColor, cursor: 'pointer' }}
+            />
+            <span style={{ fontSize: 11, color: companyConfig.accentColor, fontWeight: 700, minWidth: 28 }}>{ttsSpeed.toFixed(1)}×</span>
+          </div>
           {setup.company && (
-            <div style={{ marginLeft: 'auto' }}>
+            <div>
               <div style={{
                 padding: '4px 12px',
                 background: `${companyConfig.accentColor}18`,
