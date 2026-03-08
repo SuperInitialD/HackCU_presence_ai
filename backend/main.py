@@ -50,9 +50,9 @@ groq_client = groq.Groq(api_key=os.environ.get("GROQ_API_KEY", ""))
 # ──────────────────────────────────────────────
 
 class StartSessionRequest(BaseModel):
-    company: str
-    job_description: str
-    resume_text: str
+    company: Optional[str] = ""
+    job_description: Optional[str] = ""
+    resume_text: Optional[str] = ""
 
 
 class MetricsModel(BaseModel):
@@ -86,11 +86,10 @@ async def start_session(body: StartSessionRequest):
     """
     session_id = str(uuid.uuid4())
 
-    # If company matches a known preset key, use it; otherwise pass raw string for free-form handling
-    company_raw = body.company.strip() if body.company else ""
+    company_raw = (body.company or "").strip()
     company_key = company_raw.lower()
     if company_key not in COMPANY_PRESETS:
-        company_key = company_raw  # pass free-form text through to interviewer
+        company_key = company_raw or "generic"
 
     try:
         opening_message = interviewer.start_session(

@@ -92,21 +92,9 @@ const SetupScreen: React.FC = () => {
           interviewerName: session.interviewer_name,
         },
       });
-    } catch {
-      const setup: InterviewSetup = {
-        company: companyFreeText.trim() || undefined,
-        resumeText,
-        jobDescription: jdText,
-        sessionId: `demo-${Date.now()}`,
-      };
-      navigate('/interview', {
-        state: {
-          setup,
-          firstQuestion: `Tell me about yourself${companyFreeText.trim() ? ` and why you're interested in this ${companyFreeText.trim()} role` : ''}.`,
-          sessionId: setup.sessionId,
-          interviewerName: 'AI Interviewer',
-        },
-      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      alert(`Failed to start interview session. Make sure the backend is running on port 8000.\n\nError: ${msg}`);
     } finally {
       setIsStarting(false);
     }
