@@ -12,60 +12,39 @@ interface LocationState {
   setup: InterviewSetup;
   firstQuestion: string;
   sessionId: string;
+  interviewerName?: string;
 }
 
-const DEMO_QUESTIONS: Record<string, string[]> = {
-  google: [
-    "Tell me about yourself and why you're excited about this Google role.",
-    "Describe a time you had to solve a technically complex problem under a tight deadline.",
-    "Walk me through how you would design a URL shortener like bit.ly.",
-    "Tell me about a conflict you had with a teammate and how you resolved it.",
-  ],
-  amazon: [
-    "Tell me about yourself and why Amazon.",
-    "Tell me about a time you failed and what you learned. (Bias for Action / Learn and Be Curious)",
-    "Describe a situation where you had to make a decision with incomplete data. (Bias for Action)",
-    "Tell me about a time you went above and beyond for a customer. (Customer Obsession)",
-  ],
-  meta: [
-    "Tell me about yourself and your passion for Meta's mission.",
-    "Tell me about a time you had significant impact on a product or project.",
-    "Describe a time you worked cross-functionally to ship something.",
-    "How do you prioritize when everything is urgent?",
-  ],
-  microsoft: [
-    "Tell me about yourself and why Microsoft.",
-    "Describe a time you had to learn something new quickly to solve a problem.",
-    "Tell me about a time you helped a teammate grow.",
-    "Describe your approach to getting consensus on a technical decision.",
-  ],
-  generic: [
-    "Tell me about yourself and your background.",
-    "What's a project you're most proud of and why?",
-    "Describe a challenging situation at work and how you handled it.",
-    "Where do you see yourself in 5 years?",
-  ],
-};
+const FALLBACK_QUESTIONS = [
+  "Tell me about yourself and your background.",
+  "What's a project you're most proud of and why?",
+  "Describe a challenging situation at work and how you handled it.",
+  "Where do you see yourself in 5 years?",
+];
+
+// Always use the default company config — no company-specific theming
+const companyConfig = getCompany();
 
 const InterviewRoom: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const state = location.state as LocationState;
 
-  const setup: InterviewSetup = state?.setup || { company: 'generic', sessionId: `demo-${Date.now()}` };
+  const setup: InterviewSetup = state?.setup || { sessionId: `demo-${Date.now()}` };
   const sessionId = state?.sessionId || setup.sessionId || `demo-${Date.now()}`;
-  const companyConfig = getCompany(setup.company);
+  const interviewerName = state?.interviewerName || companyConfig.interviewer;
 
   const [messages, setMessages] = useState<Message[]>([{
     id: '0',
     role: 'interviewer',
-    content: state?.firstQuestion || DEMO_QUESTIONS[setup.company]?.[0] || "Tell me about yourself.",
+    content: state?.firstQuestion || FALLBACK_QUESTIONS[0],
     timestamp: new Date(),
   }]);
   const [textInput, setTextInput] = useState('');
   const [isThinking, setIsThinking] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessingAudio, setIsProcessingAudio] = useState(false);
+  const [transcriptionError, setTranscriptionError] = useState(false);
   const [cameraPermission, setCameraPermission] = useState<'pending' | 'granted' | 'denied'>('pending');
   const [currentTip, setCurrentTip] = useState('');
   const [isComplete, setIsComplete] = useState(false);
@@ -78,18 +57,27 @@ const InterviewRoom: React.FC = () => {
   const transcriptRef = useRef<HTMLDivElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
-  const streamRef = useRef<MediaStream | null>(null);
+  const cameraStreamRef = useRef<MediaStream | null>(null);
   const metricsSnapshotRef = useRef<FaceMetrics>({ eyeContact: 75, stress: 25, confidence: 70 });
+
+  // Refs to track current state inside async callbacks / effects
+  const isRecordingRef = useRef(false);
+  const isProcessingAudioRef = useRef(false);
+  const isThinkingRef = useRef(false);
+  const autoStartedForRef = useRef<string | null>(null);
+
+  useEffect(() => { isRecordingRef.current = isRecording; }, [isRecording]);
+  useEffect(() => { isProcessingAudioRef.current = isProcessingAudio; }, [isProcessingAudio]);
+  useEffect(() => { isThinkingRef.current = isThinking; }, [isThinking]);
 
   const { metrics } = useFaceAnalysis(videoRef, canvasRef, cameraPermission === 'granted');
 
-  // Keep metrics snapshot for submission
   useEffect(() => {
     metricsSnapshotRef.current = metrics;
     setMetricsHistory(prev => [...prev.slice(-60), metrics]);
   }, [metrics]);
 
-  // Start camera
+  // Camera init
   useEffect(() => {
     const startCamera = async () => {
       try {
@@ -97,7 +85,7 @@ const InterviewRoom: React.FC = () => {
           video: { width: { ideal: 1280 }, height: { ideal: 720 } },
           audio: false,
         });
-        streamRef.current = stream;
+        cameraStreamRef.current = stream;
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
           videoRef.current.play().catch(() => {});
@@ -109,7 +97,7 @@ const InterviewRoom: React.FC = () => {
     };
     startCamera();
     return () => {
-      streamRef.current?.getTracks().forEach(t => t.stop());
+      cameraStreamRef.current?.getTracks().forEach(t => t.stop());
     };
   }, []);
 
@@ -120,10 +108,41 @@ const InterviewRoom: React.FC = () => {
     }
   }, [messages, isThinking]);
 
+  // Auto-start recording 1.5s after a new interviewer message appears
+  useEffect(() => {
+    const lastMsg = messages[messages.length - 1];
+    if (
+      lastMsg?.role !== 'interviewer' ||
+      isComplete ||
+      lastMsg.id === autoStartedForRef.current
+    ) return;
+
+    autoStartedForRef.current = lastMsg.id;
+
+    const timer = setTimeout(async () => {
+      if (isRecordingRef.current || isProcessingAudioRef.current || isThinkingRef.current) return;
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+        audioChunksRef.current = [];
+        recorder.ondataavailable = (e) => {
+          if (e.data.size > 0) audioChunksRef.current.push(e.data);
+        };
+        recorder.start(100);
+        mediaRecorderRef.current = recorder;
+        setIsRecording(true);
+      } catch {
+        // Mic denied — user can click manually or use text input
+      }
+    }, 1500);
+
+    return () => clearTimeout(timer);
+  }, [messages, isComplete]);
+
   const currentQuestion = messages.filter(m => m.role === 'interviewer').at(-1)?.content || '';
 
   const submitAnswer = useCallback(async (answerText: string) => {
-    if (!answerText.trim() || isThinking) return;
+    if (!answerText.trim() || isThinkingRef.current) return;
 
     const candidateMsg: Message = {
       id: Date.now().toString(),
@@ -134,6 +153,7 @@ const InterviewRoom: React.FC = () => {
     setMessages(prev => [...prev, candidateMsg]);
     setTextInput('');
     setIsThinking(true);
+    setTranscriptionError(false);
 
     const m = metricsSnapshotRef.current;
 
@@ -147,9 +167,8 @@ const InterviewRoom: React.FC = () => {
           confidence: m.confidence,
         });
       } catch {
-        // Demo fallback
-        const demoQs = DEMO_QUESTIONS[setup.company] || DEMO_QUESTIONS.generic;
-        const nextQ = demoQs[questionIndex + 1];
+        // API unreachable — use local fallback
+        const nextQ = FALLBACK_QUESTIONS[questionIndex + 1];
         response = {
           next_question: nextQ,
           feedback_hint: questionIndex % 2 === 0
@@ -160,7 +179,6 @@ const InterviewRoom: React.FC = () => {
         };
       }
 
-      // Store question result
       const result: QuestionResult = {
         question: currentQuestion,
         answer: answerText.trim(),
@@ -177,9 +195,9 @@ const InterviewRoom: React.FC = () => {
       }
 
       if (response.is_complete) {
-        const avgMetrics = (key: keyof FaceMetrics) =>
+        const avgMetric = (key: keyof FaceMetrics) =>
           metricsHistory.length > 0
-            ? metricsHistory.reduce((s, m) => s + m[key], 0) / metricsHistory.length
+            ? metricsHistory.reduce((s, mm) => s + mm[key], 0) / metricsHistory.length
             : 70;
 
         const allResults = [...questionResults, result];
@@ -189,9 +207,9 @@ const InterviewRoom: React.FC = () => {
           sessionId,
           company: setup.company,
           overallScore,
-          eyeContactAvg: avgMetrics('eyeContact'),
-          stressAvg: avgMetrics('stress'),
-          confidenceAvg: avgMetrics('confidence'),
+          eyeContactAvg: avgMetric('eyeContact'),
+          stressAvg: avgMetric('stress'),
+          confidenceAvg: avgMetric('confidence'),
           strengths: response.results?.strengths || [
             'Clear and structured communication',
             'Relevant examples from past experience',
@@ -224,30 +242,32 @@ const InterviewRoom: React.FC = () => {
     } finally {
       setIsThinking(false);
     }
-  }, [isThinking, sessionId, setup.company, questionIndex, currentQuestion, metricsHistory, questionResults, messages, navigate]);
+  }, [sessionId, questionIndex, currentQuestion, metricsHistory, questionResults, messages, navigate, setup.company]);
 
   const handleSendText = () => {
     if (textInput.trim()) submitAnswer(textInput);
   };
 
   const startRecording = useCallback(async () => {
+    if (isRecordingRef.current || isProcessingAudioRef.current || isThinkingRef.current) return;
+    setTranscriptionError(false);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
       audioChunksRef.current = [];
-      mediaRecorder.ondataavailable = (e) => {
+      recorder.ondataavailable = (e) => {
         if (e.data.size > 0) audioChunksRef.current.push(e.data);
       };
-      mediaRecorder.start(100);
-      mediaRecorderRef.current = mediaRecorder;
+      recorder.start(100);
+      mediaRecorderRef.current = recorder;
       setIsRecording(true);
     } catch {
-      alert('Microphone access denied. Please use text input instead.');
+      // Mic denied silently — user can type instead
     }
   }, []);
 
   const stopRecording = useCallback(async () => {
-    if (!mediaRecorderRef.current || !isRecording) return;
+    if (!mediaRecorderRef.current || !isRecordingRef.current) return;
     setIsRecording(false);
     setIsProcessingAudio(true);
 
@@ -265,13 +285,20 @@ const InterviewRoom: React.FC = () => {
         await submitAnswer(result.text);
       }
     } catch {
-      // Demo fallback: show transcription placeholder
-      const placeholder = "I think the key aspects of this are... [audio transcription unavailable in demo — please use text input]";
-      setTextInput(placeholder);
+      setTranscriptionError(true);
     } finally {
       setIsProcessingAudio(false);
     }
-  }, [isRecording, submitAnswer]);
+  }, [submitAnswer]);
+
+  const toggleRecording = useCallback(async () => {
+    if (isProcessingAudio || isThinking) return;
+    if (isRecording) {
+      await stopRecording();
+    } else {
+      await startRecording();
+    }
+  }, [isRecording, isProcessingAudio, isThinking, startRecording, stopRecording]);
 
   return (
     <div style={{
@@ -309,25 +336,27 @@ const InterviewRoom: React.FC = () => {
             {companyConfig.icon}
           </div>
           <div>
-            <div style={{ fontWeight: 700, color: '#e8e8f0', fontSize: 15 }}>{companyConfig.interviewer}</div>
+            <div style={{ fontWeight: 700, color: '#e8e8f0', fontSize: 15 }}>{interviewerName}</div>
             <div style={{ fontSize: 12, color: '#555577', display: 'flex', alignItems: 'center', gap: 6 }}>
               <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#22c55e' }} />
               Interview in progress — Question {questionIndex + 1}
             </div>
           </div>
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-            <div style={{
-              padding: '4px 12px',
-              background: `${companyConfig.accentColor}18`,
-              border: `1px solid ${companyConfig.accentColor}33`,
-              borderRadius: 20,
-              fontSize: 12,
-              color: companyConfig.accentColor,
-              fontWeight: 600,
-            }}>
-              {companyConfig.name}
+          {setup.company && (
+            <div style={{ marginLeft: 'auto' }}>
+              <div style={{
+                padding: '4px 12px',
+                background: `${companyConfig.accentColor}18`,
+                border: `1px solid ${companyConfig.accentColor}33`,
+                borderRadius: 20,
+                fontSize: 12,
+                color: companyConfig.accentColor,
+                fontWeight: 600,
+              }}>
+                {setup.company}
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         {/* Current Question Banner */}
@@ -472,91 +501,179 @@ const InterviewRoom: React.FC = () => {
             background: '#16161e',
             flexShrink: 0,
           }}>
-            <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end' }}>
-              {/* Record Button */}
+            {/* Voice Status Banner */}
+            <AnimatePresence>
+              {(isRecording || isProcessingAudio) && (
+                <motion.div
+                  initial={{ opacity: 0, y: -8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 12,
+                    padding: '14px 20px',
+                    marginBottom: 14,
+                    background: isRecording ? '#ef444412' : '#6366f112',
+                    border: `1px solid ${isRecording ? '#ef444433' : '#6366f133'}`,
+                    borderRadius: 12,
+                  }}
+                >
+                  {isRecording ? (
+                    <>
+                      <div className="pulse-red-dot" />
+                      <span style={{ color: '#ef4444', fontWeight: 600, fontSize: 15 }}>
+                        Listening... <span style={{ fontWeight: 400, opacity: 0.8 }}>(click mic to stop)</span>
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <div className="spinner-ring" />
+                      <span style={{ color: '#8888aa', fontWeight: 600, fontSize: 15 }}>Transcribing...</span>
+                    </>
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Transcription Error */}
+            <AnimatePresence>
+              {transcriptionError && !isRecording && !isProcessingAudio && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  style={{
+                    padding: '10px 14px',
+                    marginBottom: 12,
+                    background: '#ef444412',
+                    border: '1px solid #ef444433',
+                    borderRadius: 10,
+                    color: '#ef4444',
+                    fontSize: 13,
+                  }}
+                >
+                  Transcription failed — type your answer below
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Primary mic button */}
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 14 }}>
+              <motion.button
+                whileHover={{ scale: isProcessingAudio || isThinking ? 1 : 1.05 }}
+                whileTap={{ scale: isProcessingAudio || isThinking ? 1 : 0.95 }}
+                onClick={toggleRecording}
+                disabled={isProcessingAudio || isThinking}
+                title={isRecording ? 'Click to stop recording' : 'Click to start recording'}
+                style={{
+                  width: 64, height: 64,
+                  borderRadius: 32,
+                  background: isRecording
+                    ? '#ef4444'
+                    : isProcessingAudio
+                    ? '#1c1c28'
+                    : companyConfig.accentColor,
+                  border: `2px solid ${
+                    isRecording ? '#ef444466'
+                    : isProcessingAudio ? '#2a2a3e'
+                    : companyConfig.accentColor + '66'
+                  }`,
+                  cursor: isProcessingAudio || isThinking ? 'not-allowed' : 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: '#fff',
+                  opacity: isThinking ? 0.4 : 1,
+                  boxShadow: isRecording
+                    ? '0 0 28px #ef444455'
+                    : isProcessingAudio ? 'none'
+                    : `0 0 20px ${companyConfig.accentColor}44`,
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                {isProcessingAudio ? (
+                  <div className="spinner-ring" style={{ width: 24, height: 24, borderWidth: 3, borderColor: '#555577', borderTopColor: companyConfig.accentColor }} />
+                ) : isRecording ? (
+                  <MicOff size={26} />
+                ) : (
+                  <Mic size={26} />
+                )}
+              </motion.button>
+            </div>
+
+            {/* Mic button label */}
+            {!isRecording && !isProcessingAudio && (
+              <div style={{ textAlign: 'center', color: '#555577', fontSize: 12, marginBottom: 14 }}>
+                {isThinking ? 'Waiting for AI response...' : 'Click to start recording'}
+              </div>
+            )}
+
+            {/* Secondary: Text input */}
+            <div style={{ display: 'flex', gap: 10 }}>
+              <textarea
+                value={textInput}
+                onChange={e => setTextInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSendText();
+                  }
+                }}
+                placeholder={
+                  isRecording
+                    ? 'Recording in progress...'
+                    : isProcessingAudio
+                    ? 'Transcribing audio...'
+                    : 'Or type your answer here... (Enter to send)'
+                }
+                disabled={isThinking || isRecording || isProcessingAudio}
+                rows={2}
+                style={{
+                  flex: 1,
+                  background: '#0f0f13',
+                  border: '1px solid #2a2a3e',
+                  borderRadius: 10,
+                  padding: '10px 14px',
+                  color: '#e8e8f0',
+                  fontSize: 13,
+                  outline: 'none',
+                  resize: 'none',
+                  fontFamily: 'inherit',
+                  lineHeight: 1.5,
+                  opacity: isThinking || isRecording || isProcessingAudio ? 0.4 : 0.8,
+                  transition: 'opacity 0.2s',
+                }}
+              />
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
-                onMouseDown={startRecording}
-                onMouseUp={stopRecording}
-                onTouchStart={startRecording}
-                onTouchEnd={stopRecording}
-                disabled={isThinking || isProcessingAudio}
-                title="Hold to record"
+                onClick={handleSendText}
+                disabled={isThinking || !textInput.trim() || isRecording || isProcessingAudio}
                 style={{
-                  width: 48, height: 48,
-                  borderRadius: 12,
-                  background: isRecording ? '#ef4444' : '#1c1c28',
-                  border: `1.5px solid ${isRecording ? '#ef4444' : '#2a2a3e'}`,
-                  cursor: isThinking || isProcessingAudio ? 'not-allowed' : 'pointer',
+                  width: 42, height: 42,
+                  borderRadius: 10,
+                  background: textInput.trim() && !isThinking && !isRecording && !isProcessingAudio
+                    ? companyConfig.accentColor : '#1c1c28',
+                  border: `1.5px solid ${
+                    textInput.trim() && !isThinking && !isRecording && !isProcessingAudio
+                      ? companyConfig.accentColor : '#2a2a3e'
+                  }`,
+                  cursor: isThinking || !textInput.trim() || isRecording || isProcessingAudio
+                    ? 'not-allowed' : 'pointer',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  color: isRecording ? '#fff' : '#8888aa',
+                  color: textInput.trim() && !isThinking && !isRecording && !isProcessingAudio
+                    ? '#fff' : '#555577',
                   flexShrink: 0,
-                  opacity: isThinking || isProcessingAudio ? 0.5 : 1,
+                  alignSelf: 'flex-end',
+                  transition: 'all 0.2s',
                 }}
-                className={isRecording ? 'recording-active' : ''}
               >
-                {isProcessingAudio
-                  ? <div style={{ width: 16, height: 16, border: '2px solid #8888aa', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-                  : isRecording
-                  ? <MicOff size={18} />
-                  : <Mic size={18} />
-                }
+                <Send size={15} />
               </motion.button>
-
-              {/* Text Input */}
-              <div style={{ flex: 1, display: 'flex', gap: 10 }}>
-                <textarea
-                  value={textInput}
-                  onChange={e => setTextInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      handleSendText();
-                    }
-                  }}
-                  placeholder={isRecording ? '🎙️ Recording... release to submit' : isProcessingAudio ? 'Processing audio...' : 'Type your answer or hold the mic button... (Enter to send)'}
-                  disabled={isThinking || isRecording}
-                  rows={2}
-                  style={{
-                    flex: 1,
-                    background: '#0f0f13',
-                    border: '1px solid #2a2a3e',
-                    borderRadius: 12,
-                    padding: '12px 16px',
-                    color: '#e8e8f0',
-                    fontSize: 14,
-                    outline: 'none',
-                    resize: 'none',
-                    fontFamily: 'inherit',
-                    lineHeight: 1.5,
-                    opacity: isThinking ? 0.5 : 1,
-                  }}
-                />
-                <motion.button
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  onClick={handleSendText}
-                  disabled={isThinking || !textInput.trim()}
-                  style={{
-                    width: 48, height: 48,
-                    borderRadius: 12,
-                    background: textInput.trim() && !isThinking ? companyConfig.accentColor : '#1c1c28',
-                    border: `1.5px solid ${textInput.trim() && !isThinking ? companyConfig.accentColor : '#2a2a3e'}`,
-                    cursor: isThinking || !textInput.trim() ? 'not-allowed' : 'pointer',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    color: textInput.trim() && !isThinking ? '#fff' : '#555577',
-                    flexShrink: 0,
-                    alignSelf: 'flex-end',
-                    transition: 'all 0.2s',
-                  }}
-                >
-                  <Send size={16} />
-                </motion.button>
-              </div>
             </div>
-            <div style={{ fontSize: 11, color: '#555577', marginTop: 8, textAlign: 'center' }}>
-              Hold mic to record voice • Enter to send text • Shift+Enter for new line
+
+            <div style={{ fontSize: 11, color: '#444466', marginTop: 8, textAlign: 'center' }}>
+              Click mic to record voice • Enter to send text • Shift+Enter for new line
             </div>
           </div>
         )}
@@ -589,7 +706,7 @@ const InterviewRoom: React.FC = () => {
                   width: '100%',
                   height: '100%',
                   objectFit: 'cover',
-                  transform: 'scaleX(-1)', // mirror effect
+                  transform: 'scaleX(-1)',
                 }}
               />
               <canvas
@@ -634,7 +751,6 @@ const InterviewRoom: React.FC = () => {
             </div>
           )}
 
-          {/* Camera overlay labels */}
           {cameraPermission === 'granted' && (
             <>
               <div style={{
@@ -650,21 +766,19 @@ const InterviewRoom: React.FC = () => {
                 <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#ef4444' }} />
                 LIVE
               </div>
-              {cameraPermission === 'granted' && (
-                <div style={{
-                  position: 'absolute', bottom: 14, right: 14,
-                  padding: '4px 10px',
-                  background: 'rgba(0,0,0,0.6)',
-                  borderRadius: 20,
-                  fontSize: 11,
-                  color: '#8888aa',
-                  backdropFilter: 'blur(8px)',
-                  display: 'flex', alignItems: 'center', gap: 5,
-                }}>
-                  <VideoOff size={11} />
-                  Face Mesh Active
-                </div>
-              )}
+              <div style={{
+                position: 'absolute', bottom: 14, right: 14,
+                padding: '4px 10px',
+                background: 'rgba(0,0,0,0.6)',
+                borderRadius: 20,
+                fontSize: 11,
+                color: '#8888aa',
+                backdropFilter: 'blur(8px)',
+                display: 'flex', alignItems: 'center', gap: 5,
+              }}>
+                <VideoOff size={11} />
+                Face Mesh Active
+              </div>
             </>
           )}
         </div>
@@ -712,7 +826,7 @@ const InterviewRoom: React.FC = () => {
                 }}
               >
                 <div style={{ fontSize: 11, fontWeight: 600, color: companyConfig.accentColor, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
-                  💡 Tip from {companyConfig.interviewer.split(' ')[0]}
+                  💡 Tip
                 </div>
                 <div style={{ fontSize: 13, color: '#c8c8e0', lineHeight: 1.6 }}>
                   {currentTip}
@@ -727,20 +841,24 @@ const InterviewRoom: React.FC = () => {
               Progress
             </div>
             <div style={{ display: 'flex', gap: 6 }}>
-              {(DEMO_QUESTIONS[setup.company] || DEMO_QUESTIONS.generic).map((_, i) => (
+              {FALLBACK_QUESTIONS.map((_, i) => (
                 <div
                   key={i}
                   style={{
                     flex: 1, height: 4,
                     borderRadius: 2,
-                    background: i < questionIndex ? companyConfig.accentColor : i === questionIndex ? `${companyConfig.accentColor}55` : '#2a2a3e',
+                    background: i < questionIndex
+                      ? companyConfig.accentColor
+                      : i === questionIndex
+                      ? `${companyConfig.accentColor}55`
+                      : '#2a2a3e',
                     transition: 'background 0.3s ease',
                   }}
                 />
               ))}
             </div>
             <div style={{ fontSize: 12, color: '#555577', marginTop: 8 }}>
-              Question {Math.min(questionIndex + 1, (DEMO_QUESTIONS[setup.company] || DEMO_QUESTIONS.generic).length)} of {(DEMO_QUESTIONS[setup.company] || DEMO_QUESTIONS.generic).length}
+              Question {questionIndex + 1}
             </div>
           </div>
 
@@ -748,9 +866,9 @@ const InterviewRoom: React.FC = () => {
           {!isComplete && questionIndex >= 1 && (
             <button
               onClick={() => {
-                const avgMetrics = (key: keyof FaceMetrics) =>
+                const avgMetric = (key: keyof FaceMetrics) =>
                   metricsHistory.length > 0
-                    ? metricsHistory.reduce((s, m) => s + m[key], 0) / metricsHistory.length
+                    ? metricsHistory.reduce((s, mm) => s + mm[key], 0) / metricsHistory.length
                     : 70;
                 const overallScore = questionResults.length > 0
                   ? Math.round(questionResults.reduce((s, r) => s + r.score, 0) / questionResults.length)
@@ -759,9 +877,9 @@ const InterviewRoom: React.FC = () => {
                   sessionId,
                   company: setup.company,
                   overallScore,
-                  eyeContactAvg: avgMetrics('eyeContact'),
-                  stressAvg: avgMetrics('stress'),
-                  confidenceAvg: avgMetrics('confidence'),
+                  eyeContactAvg: avgMetric('eyeContact'),
+                  stressAvg: avgMetric('stress'),
+                  confidenceAvg: avgMetric('confidence'),
                   strengths: ['Clear communication', 'Relevant examples', 'Good structure'],
                   improvements: ['More quantitative metrics', 'Maintain eye contact', 'Slow down for complex topics'],
                   questions: questionResults,
@@ -793,7 +911,38 @@ const InterviewRoom: React.FC = () => {
       </div>
 
       <style>{`
-        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        @keyframes pulse-red {
+          0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 #ef444455; }
+          50% { transform: scale(1.2); box-shadow: 0 0 0 8px #ef444400; }
+        }
+        .pulse-red-dot {
+          width: 14px;
+          height: 14px;
+          border-radius: 50%;
+          background: #ef4444;
+          animation: pulse-red 1.2s ease-in-out infinite;
+          flex-shrink: 0;
+        }
+        .spinner-ring {
+          width: 16px;
+          height: 16px;
+          border-radius: 50%;
+          border: 2.5px solid #555577;
+          border-top-color: #6366f1;
+          animation: spin 0.8s linear infinite;
+          flex-shrink: 0;
+        }
+        .thinking-dot:nth-child(1) { animation: thinking 1.2s ease-in-out infinite 0s; }
+        .thinking-dot:nth-child(2) { animation: thinking 1.2s ease-in-out infinite 0.2s; }
+        .thinking-dot:nth-child(3) { animation: thinking 1.2s ease-in-out infinite 0.4s; }
+        @keyframes thinking {
+          0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
+          40% { opacity: 1; transform: scale(1); }
+        }
       `}</style>
     </div>
   );
