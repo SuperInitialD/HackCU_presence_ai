@@ -248,11 +248,12 @@ const InterviewRoom: React.FC = () => {
 
       // Update checklist from AI response (only allow items to flip true)
       if (response.checklist) {
+        const cl = response.checklist;
         setChecklist(prev => ({
-          resume: prev.resume || !!response.checklist.resume,
-          profile: prev.profile || !!response.checklist.profile,
-          technical: prev.technical || !!response.checklist.technical,
-          behavioral: prev.behavioral || !!response.checklist.behavioral,
+          resume: prev.resume || !!cl.resume,
+          profile: prev.profile || !!cl.profile,
+          technical: prev.technical || !!cl.technical,
+          behavioral: prev.behavioral || !!cl.behavioral,
         }));
       }
 
