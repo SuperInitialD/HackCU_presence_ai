@@ -80,6 +80,8 @@ export interface InterviewResults {
   sessionId: string;
   company?: string;
   overallScore: number;
+  presenceScore: number;      // 0-100: eye contact + stress + confidence
+  interviewScore: number;     // 0-100: AI eval of answer quality
   eyeContactAvg: number;
   stressAvg: number;
   confidenceAvg: number;
@@ -87,6 +89,8 @@ export interface InterviewResults {
   improvements: string[];
   questions: QuestionResult[];
   duration: number;
+  hiring_recommendation?: string;
+  summary?: string;
   answer_quality?: AnswerQuality;
   resume_feedback?: ResumeFeedback | null;
   linkedin_feedback?: LinkedInFeedback | null;

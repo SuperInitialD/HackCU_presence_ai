@@ -1,7 +1,7 @@
 import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { RotateCcw, TrendingUp, AlertCircle, Eye, Brain, Shield, ChevronDown, ChevronUp, Star } from 'lucide-react';
+import { RotateCcw, TrendingUp, AlertCircle, ChevronDown, ChevronUp, Star } from 'lucide-react';
 import { getCompany } from '../components/CompanyConfig';
 import MetricGauge from '../components/MetricGauge';
 import type { InterviewResults, AnswerQualityPerQuestion, FeedbackImprovement } from '../types';
@@ -10,6 +10,8 @@ const MOCK_RESULTS: InterviewResults = {
   sessionId: 'demo',
   company: 'generic',
   overallScore: 74,
+  presenceScore: 76,
+  interviewScore: 72,
   eyeContactAvg: 78,
   stressAvg: 32,
   confidenceAvg: 71,
@@ -329,8 +331,7 @@ const ResultsDashboard: React.FC = () => {
   const results: InterviewResults = (location.state as { results: InterviewResults })?.results || MOCK_RESULTS;
   const companyConfig = getCompany(results.company);
 
-  const scoreColor = results.overallScore >= 80 ? '#22c55e' : results.overallScore >= 60 ? '#eab308' : '#ef4444';
-  const scoreLabel = results.overallScore >= 80 ? 'Excellent' : results.overallScore >= 65 ? 'Good' : results.overallScore >= 50 ? 'Needs Work' : 'Keep Practicing';
+
 
   return (
     <div style={{ minHeight: '100vh', background: '#0f0f13', padding: '48px 24px' }}>
@@ -377,63 +378,83 @@ const ResultsDashboard: React.FC = () => {
           </motion.button>
         </motion.div>
 
-        {/* ── Score Overview ── */}
+        {/* ── Score Overview — two cards ── */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          style={{
-            background: '#16161e',
-            border: '1px solid #2a2a3e',
-            borderRadius: 20,
-            padding: '36px',
-            marginBottom: 24,
-            display: 'flex',
-            gap: 40,
-            alignItems: 'center',
-          }}
+          style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 24 }}
         >
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
-            <ScoreRing score={results.overallScore} color={scoreColor} size={140} />
-            <div style={{
-              padding: '4px 16px',
-              background: scoreColor + '22',
-              border: `1px solid ${scoreColor}44`,
-              borderRadius: 20,
-              fontSize: 13,
-              color: scoreColor,
-              fontWeight: 700,
-            }}>
-              {scoreLabel}
-            </div>
-          </div>
-
-          <div style={{ flex: 1 }}>
-            <h2 style={{ fontSize: 20, fontWeight: 700, color: '#e8e8f0', margin: '0 0 20px', letterSpacing: '-0.01em' }}>
-              Overall Performance
-            </h2>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                <Eye size={16} color="#8888aa" />
-                <div style={{ flex: 1 }}>
+          {/* Presence Score */}
+          {(() => {
+            const ps = results.presenceScore ?? results.overallScore;
+            const pc = ps >= 80 ? '#22c55e' : ps >= 60 ? '#eab308' : '#ef4444';
+            const pl = ps >= 80 ? 'Excellent Presence' : ps >= 65 ? 'Good Presence' : ps >= 50 ? 'Needs Work' : 'Keep Practicing';
+            return (
+              <div style={{ background: '#16161e', border: '1px solid #2a2a3e', borderRadius: 20, padding: '32px 28px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: '#8888aa', textTransform: 'uppercase', letterSpacing: '0.08em', alignSelf: 'flex-start' }}>
+                  🎥 Presence Score
+                </div>
+                <ScoreRing score={ps} color={pc} size={120} />
+                <div style={{ padding: '4px 14px', background: pc + '22', border: `1px solid ${pc}44`, borderRadius: 20, fontSize: 12, color: pc, fontWeight: 700 }}>
+                  {pl}
+                </div>
+                <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 10 }}>
                   <MetricGauge label="Eye Contact" value={results.eyeContactAvg} type="bar" />
-                </div>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                <Brain size={16} color="#8888aa" />
-                <div style={{ flex: 1 }}>
-                  <MetricGauge label="Stress Level" value={results.stressAvg} type="bar" invert />
-                </div>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                <Shield size={16} color="#8888aa" />
-                <div style={{ flex: 1 }}>
+                  <MetricGauge label="Calmness" value={100 - results.stressAvg} type="bar" />
                   <MetricGauge label="Confidence" value={results.confidenceAvg} type="bar" />
                 </div>
               </div>
-            </div>
-          </div>
+            );
+          })()}
+
+          {/* Interview Performance Score */}
+          {(() => {
+            const is_ = results.interviewScore ?? results.overallScore;
+            const ic = is_ >= 80 ? '#6366f1' : is_ >= 60 ? '#8b5cf6' : is_ >= 40 ? '#a78bfa' : '#ef4444';
+            const il = is_ >= 80 ? 'Strong Performance' : is_ >= 65 ? 'Good Performance' : is_ >= 50 ? 'Needs Practice' : 'Keep Practicing';
+            return (
+              <div style={{ background: '#16161e', border: '1px solid #2a2a3e', borderRadius: 20, padding: '32px 28px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: '#8888aa', textTransform: 'uppercase', letterSpacing: '0.08em', alignSelf: 'flex-start' }}>
+                  🧠 Interview Performance
+                </div>
+                <ScoreRing score={is_} color={ic} size={120} />
+                <div style={{ padding: '4px 14px', background: ic + '22', border: `1px solid ${ic}44`, borderRadius: 20, fontSize: 12, color: ic, fontWeight: 700 }}>
+                  {il}
+                </div>
+                {results.answer_quality && (
+                  <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <MetricGauge label="STAR Structure" value={results.answer_quality.star_structure * 10} type="bar" />
+                    <MetricGauge label="Specificity" value={results.answer_quality.specificity * 10} type="bar" />
+                    <MetricGauge label="Depth" value={results.answer_quality.depth * 10} type="bar" />
+                  </div>
+                )}
+                {results.hiring_recommendation && (
+                  <div style={{ marginTop: 4, fontSize: 13, color: '#c8c8e0', textAlign: 'center' }}>
+                    Hiring Signal: <span style={{ fontWeight: 700, color: ic }}>{results.hiring_recommendation}</span>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </motion.div>
+
+        {/* ── AI Summary ── */}
+        {results.summary && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.13 }}
+            style={{ background: '#16161e', border: '1px solid #2a2a3e', borderRadius: 16, padding: '22px 26px', marginBottom: 24 }}
+          >
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#8888aa', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>
+              💬 Interviewer Summary
+            </div>
+            <p style={{ margin: 0, fontSize: 15, color: '#c8c8e0', lineHeight: 1.7, fontStyle: 'italic' }}>
+              "{results.summary}"
+            </p>
+          </motion.div>
+        )}
 
         {/* ── Answer Quality ── */}
         {results.answer_quality && (

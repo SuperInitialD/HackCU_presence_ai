@@ -279,25 +279,39 @@ const InterviewRoom: React.FC = () => {
         const allResults = [...questionResults, result];
         const overallScore = Math.round(allResults.reduce((s, r) => s + r.score, 0) / allResults.length);
 
+        const eyeContactAvg = avgMetric('eyeContact');
+        const stressAvg     = avgMetric('stress');
+        const confidenceAvg = avgMetric('confidence');
+
+        // Presence score: eye contact + inverted stress + confidence, averaged to 0-100
+        const presenceScore = Math.round((eyeContactAvg + (100 - stressAvg) + confidenceAvg) / 3);
+
+        // Interview performance score: from AI answer_quality (0-10 → 0-100) or fallback to per-question avg
+        const aq = response.results?.answer_quality;
+        const interviewScore = aq?.overall != null
+          ? Math.round(aq.overall * 10)
+          : response.results?.overall_score?.total != null
+          ? Math.round(response.results.overall_score.total * 10)
+          : overallScore;
+
         const interviewResults: InterviewResults = {
           sessionId,
           company: setup.company,
-          overallScore,
-          eyeContactAvg: avgMetric('eyeContact'),
-          stressAvg: avgMetric('stress'),
-          confidenceAvg: avgMetric('confidence'),
-          strengths: response.results?.strengths || [
-            'Clear and structured communication',
-            'Relevant examples from past experience',
-            'Confident delivery on technical questions',
-          ],
-          improvements: response.results?.improvements || [
-            'Maintain consistent eye contact during key points',
-            'Use more quantitative metrics in your examples',
-            'Slow down slightly when explaining complex topics',
-          ],
+          overallScore: Math.round((presenceScore + interviewScore) / 2),
+          presenceScore,
+          interviewScore,
+          eyeContactAvg,
+          stressAvg,
+          confidenceAvg,
+          strengths: response.results?.strengths || [],
+          improvements: response.results?.areas_for_improvement || [],
           questions: allResults,
           duration: Math.round((Date.now() - new Date(messages[0].timestamp).getTime()) / 1000 / 60),
+          hiring_recommendation: response.results?.hiring_recommendation,
+          summary: response.results?.summary,
+          answer_quality: response.results?.answer_quality,
+          resume_feedback: response.results?.resume_feedback ?? null,
+          linkedin_feedback: response.results?.linkedin_feedback ?? null,
         };
 
         setIsComplete(true);
@@ -1034,20 +1048,28 @@ const InterviewRoom: React.FC = () => {
                   metricsHistory.length > 0
                     ? metricsHistory.reduce((s, mm) => s + mm[key], 0) / metricsHistory.length
                     : 70;
-                const overallScore = questionResults.length > 0
+                const eyeC = avgMetric('eyeContact');
+                const str  = avgMetric('stress');
+                const conf = avgMetric('confidence');
+                const presenceScore  = Math.round((eyeC + (100 - str) + conf) / 3);
+                const interviewScore = questionResults.length > 0
                   ? Math.round(questionResults.reduce((s, r) => s + r.score, 0) / questionResults.length)
                   : 72;
                 const results: InterviewResults = {
                   sessionId,
                   company: setup.company,
-                  overallScore,
-                  eyeContactAvg: avgMetric('eyeContact'),
-                  stressAvg: avgMetric('stress'),
-                  confidenceAvg: avgMetric('confidence'),
-                  strengths: ['Clear communication', 'Relevant examples', 'Good structure'],
-                  improvements: ['More quantitative metrics', 'Maintain eye contact', 'Slow down for complex topics'],
+                  overallScore: Math.round((presenceScore + interviewScore) / 2),
+                  presenceScore,
+                  interviewScore,
+                  eyeContactAvg: eyeC,
+                  stressAvg: str,
+                  confidenceAvg: conf,
+                  strengths: [],
+                  improvements: [],
                   questions: questionResults,
                   duration: Math.round((Date.now() - new Date(messages[0].timestamp).getTime()) / 1000 / 60),
+                  resume_feedback: null,
+                  linkedin_feedback: null,
                 };
                 navigate('/results', { state: { results } });
               }}

@@ -47,15 +47,30 @@ export interface RespondResponse {
     };
   };
   results?: {
-    overall_score: number;
+    overall_score?: { total: number; communication: number; technical_depth: number; problem_solving: number; culture_fit: number; confidence: number };
     strengths: string[];
-    improvements: string[];
-    per_question: Array<{
-      question: string;
-      answer: string;
-      feedback: string;
-      score: number;
-    }>;
+    areas_for_improvement: string[];
+    improvements?: string[];
+    standout_moments?: string[];
+    hiring_recommendation?: string;
+    summary?: string;
+    answer_quality?: {
+      star_structure: number;
+      specificity: number;
+      depth: number;
+      overall: number;
+      summary: string;
+      per_question: Array<{ question: string; answer_summary: string; score: number; feedback: string }>;
+    };
+    resume_feedback?: {
+      overall_impression: string;
+      strengths: string[];
+      improvements: Array<{ section: string; issue: string; suggestion: string }>;
+    } | null;
+    linkedin_feedback?: {
+      overall_impression: string;
+      improvements: Array<{ section: string; issue: string; suggestion: string }>;
+    } | null;
   };
 }
 
