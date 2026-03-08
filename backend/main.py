@@ -26,6 +26,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 import groq
 from openai import OpenAI
+import logging
 
 from interviewer import AIInterviewer
 from resume_parser import parse_pdf, extract_key_info
@@ -291,6 +292,9 @@ async def transcribe_audio(file: UploadFile = File(None), audio: UploadFile = Fi
             response_format="text",
         )
     except Exception as e:
+        logger = logging.getLogger(__name__)
+        # Log the error with traceback and some context for debugging
+        logger.exception("Transcription failed for file=%s content_type=%s", filename, content_type)
         raise HTTPException(status_code=500, detail=f"Transcription failed: {str(e)}")
 
     # Groq returns a string when response_format="text"
