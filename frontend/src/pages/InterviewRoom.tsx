@@ -59,7 +59,11 @@ const InterviewRoom: React.FC = () => {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const cameraStreamRef = useRef<MediaStream | null>(null);
-  const metricsSnapshotRef = useRef<FaceMetrics>({ eyeContact: 75, stress: 25, confidence: 70 });
+  const metricsSnapshotRef = useRef<FaceMetrics>({ eyeContact: 75, volume: 50, confidence: 70 });
+  const videoChunksRef = useRef<Blob[]>([]);
+  const recordingStartRef = useRef<number>(0);
+  const videoRecorderRef = useRef<MediaRecorder | null>(null);
+  const videoTimestampsRef = useRef<Array<{ time: number; label: string; feedback?: string }>>([]);
 
   // Refs to track current state inside async callbacks / effects
   const isRecordingRef = useRef(false);
@@ -149,15 +153,42 @@ const InterviewRoom: React.FC = () => {
   useEffect(() => {
     const startCamera = async () => {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
+        const videoStream = await navigator.mediaDevices.getUserMedia({
           video: { width: { ideal: 1280 }, height: { ideal: 720 } },
           audio: false,
         });
-        cameraStreamRef.current = stream;
+        // Also grab audio track for the video recording (separate from STT mic)
+        let combinedStream = videoStream;
+        try {
+          const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+          const audioTrack = audioStream.getAudioTracks()[0];
+          if (audioTrack) {
+            combinedStream = new MediaStream([...videoStream.getTracks(), audioTrack]);
+          }
+        } catch { /* no audio in recording — fine */ }
+
+        cameraStreamRef.current = videoStream;
         if (videoRef.current) {
-          videoRef.current.srcObject = stream;
+          videoRef.current.srcObject = videoStream;
           videoRef.current.play().catch(() => {});
         }
+
+        // Start video recording
+        videoChunksRef.current = [];
+        recordingStartRef.current = Date.now();
+        videoTimestampsRef.current = [];
+        try {
+          const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
+            ? 'video/webm;codecs=vp9'
+            : MediaRecorder.isTypeSupported('video/webm')
+            ? 'video/webm'
+            : '';
+          const recorder = new MediaRecorder(combinedStream, mimeType ? { mimeType } : undefined);
+          recorder.ondataavailable = e => { if (e.data.size > 0) videoChunksRef.current.push(e.data); };
+          recorder.start(1000);
+          videoRecorderRef.current = recorder;
+        } catch { /* recording unsupported */ }
+
         setCameraPermission('granted');
       } catch {
         setCameraPermission('denied');
@@ -235,7 +266,7 @@ const InterviewRoom: React.FC = () => {
       const response = await respond(sessionId, {
         answer: answerText.trim(),
         eye_contact: m.eyeContact,
-        stress: m.stress,
+        stress: m.volume,  // send volume as stress proxy for backend
         confidence: m.confidence,
       });
 
@@ -245,7 +276,7 @@ const InterviewRoom: React.FC = () => {
         feedback: response.feedback_hint || '',
         score: response.score || Math.round(65 + Math.random() * 25),
         eyeContact: m.eyeContact,
-        stress: m.stress,
+        stress: m.volume,
         confidence: m.confidence,
       };
       setQuestionResults(prev => [...prev, result]);
@@ -289,9 +320,23 @@ const InterviewRoom: React.FC = () => {
 
         const allResults = [...questionResults, result];
         const eyeContactAvg = avgMetric('eyeContact');
-        const stressAvg     = avgMetric('stress');
+        const stressAvg     = avgMetric('volume');
         const confidenceAvg = avgMetric('confidence');
-        const presenceScore = Math.round((eyeContactAvg + (100 - stressAvg) + confidenceAvg) / 3);
+        const presenceScore = Math.round((eyeContactAvg + stressAvg + confidenceAvg) / 3);  // stressAvg is now volumeAvg
+
+        // Stop video recording and compile blob
+        let videoUrl: string | undefined;
+        const videoTimestamps = [...videoTimestampsRef.current];
+        if (videoRecorderRef.current && videoRecorderRef.current.state !== 'inactive') {
+          await new Promise<void>(res => {
+            videoRecorderRef.current!.onstop = () => res();
+            videoRecorderRef.current!.stop();
+          });
+          if (videoChunksRef.current.length > 0) {
+            const blob = new Blob(videoChunksRef.current, { type: 'video/webm' });
+            videoUrl = URL.createObjectURL(blob);
+          }
+        }
 
         // Call the real end-session endpoint for AI evaluation
         try {
@@ -311,7 +356,7 @@ const InterviewRoom: React.FC = () => {
             presenceScore,
             interviewScore,
             eyeContactAvg,
-            stressAvg,
+            volumeAvg: stressAvg,
             confidenceAvg,
             strengths: evaluation.strengths || [],
             improvements: evaluation.areas_for_improvement || [],
@@ -322,6 +367,8 @@ const InterviewRoom: React.FC = () => {
             answer_quality: evaluation.answer_quality,
             resume_feedback: evaluation.resume_feedback ?? null,
             linkedin_feedback: evaluation.linkedin_feedback ?? null,
+            videoUrl,
+            videoTimestamps,
           };
 
           navigate('/results', { state: { results: interviewResults } });
@@ -332,7 +379,7 @@ const InterviewRoom: React.FC = () => {
             sessionId, company: setup.company,
             overallScore: Math.round((presenceScore + interviewScore) / 2),
             presenceScore, interviewScore,
-            eyeContactAvg, stressAvg, confidenceAvg,
+            eyeContactAvg, volumeAvg: stressAvg, confidenceAvg,
             strengths: [], improvements: [], questions: allResults,
             duration: Math.round((Date.now() - new Date(messages[0].timestamp).getTime()) / 1000 / 60),
             resume_feedback: null, linkedin_feedback: null,
@@ -340,6 +387,12 @@ const InterviewRoom: React.FC = () => {
         }
       } else if (response.next_question) {
         if (!response.follow_up) setQuestionCount(prev => prev + 1);
+        // Record timestamp for this question in the video timeline
+        videoTimestampsRef.current.push({
+          time: (Date.now() - recordingStartRef.current) / 1000,
+          label: response.next_question.slice(0, 80) + (response.next_question.length > 80 ? '…' : ''),
+          feedback: response.feedback_hint,
+        });
         const interviewerMsg: Message = {
           id: Date.now().toString() + '-q',
           role: 'interviewer',
@@ -975,9 +1028,9 @@ const InterviewRoom: React.FC = () => {
             }}>
               <MetricGauge label="Eye Contact" value={metrics.eyeContact} type="gauge" />
               <MetricGauge label="Confidence" value={metrics.confidence} type="gauge" />
-              <MetricGauge label="Stress" value={metrics.stress} type="gauge" invert />
+              <MetricGauge label="Volume" value={metrics.volume} type="gauge" />
             </div>
-            <MetricGauge label="Stress Level" value={metrics.stress} type="bar" invert />
+            <MetricGauge label="Vocal Volume" value={metrics.volume} type="bar" />
           </div>
 
           {/* Tip from AI */}
@@ -1088,9 +1141,9 @@ const InterviewRoom: React.FC = () => {
                     ? metricsHistory.reduce((s, mm) => s + mm[key], 0) / metricsHistory.length
                     : 70;
                 const eyeC = avgMetric('eyeContact');
-                const str  = avgMetric('stress');
+                const str  = avgMetric('volume');
                 const conf = avgMetric('confidence');
-                const presenceScore  = Math.round((eyeC + (100 - str) + conf) / 3);
+                const presenceScore  = Math.round((eyeC + str + conf) / 3);
                 const interviewScore = questionResults.length > 0
                   ? Math.round(questionResults.reduce((s, r) => s + r.score, 0) / questionResults.length)
                   : 72;
@@ -1101,7 +1154,7 @@ const InterviewRoom: React.FC = () => {
                   presenceScore,
                   interviewScore,
                   eyeContactAvg: eyeC,
-                  stressAvg: str,
+                  volumeAvg: str,
                   confidenceAvg: conf,
                   strengths: [],
                   improvements: [],

@@ -28,9 +28,9 @@ export interface Message {
 }
 
 export interface FaceMetrics {
-  eyeContact: number;   // 0-100
-  stress: number;       // 0-100
-  confidence: number;   // 0-100
+  eyeContact: number;   // 0-100: face gaze estimated by MediaPipe
+  volume: number;       // 0-100: mic RMS audio level
+  confidence: number;   // 0-100: face landmark presence/quality
 }
 
 export interface QuestionResult {
@@ -83,10 +83,11 @@ export interface InterviewResults {
   sessionId: string;
   company?: string;
   overallScore: number;
-  presenceScore: number;      // 0-100: eye contact + stress + confidence
+  presenceScore: number;      // 0-100: eye contact + volume + confidence
   interviewScore: number;     // 0-100: AI eval of answer quality
   eyeContactAvg: number;
-  stressAvg: number;
+  volumeAvg: number;
+  stressAvg?: number;   // legacy — mapped to volumeAvg
   confidenceAvg: number;
   strengths: string[];
   improvements: string[];
@@ -94,6 +95,8 @@ export interface InterviewResults {
   duration: number;
   hiring_recommendation?: string;
   summary?: string;
+  videoUrl?: string;
+  videoTimestamps?: Array<{ time: number; label: string; feedback?: string }>;
   answer_quality?: AnswerQuality;
   resume_feedback?: ResumeFeedback | null;
   linkedin_feedback?: LinkedInFeedback | null;
