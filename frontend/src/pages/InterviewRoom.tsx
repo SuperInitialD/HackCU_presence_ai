@@ -15,12 +15,7 @@ interface LocationState {
   interviewerName?: string;
 }
 
-const FALLBACK_QUESTIONS = [
-  "Tell me about yourself and your background.",
-  "What's a project you're most proud of and why?",
-  "Describe a challenging situation at work and how you handled it.",
-  "Where do you see yourself in 5 years?",
-];
+
 
 // Always use the default company config — no company-specific theming
 const companyConfig = getCompany();
@@ -37,7 +32,7 @@ const InterviewRoom: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([{
     id: '0',
     role: 'interviewer',
-    content: state?.firstQuestion || FALLBACK_QUESTIONS[0],
+    content: state?.firstQuestion || "Tell me about yourself.",
     timestamp: new Date(),
   }]);
   const [textInput, setTextInput] = useState('');
@@ -48,7 +43,7 @@ const InterviewRoom: React.FC = () => {
   const [cameraPermission, setCameraPermission] = useState<'pending' | 'granted' | 'denied'>('pending');
   const [currentTip, setCurrentTip] = useState('');
   const [isComplete, setIsComplete] = useState(false);
-  const [questionIndex, setQuestionIndex] = useState(0);
+  const [questionCount, setQuestionCount] = useState(0);
   const [metricsHistory, setMetricsHistory] = useState<FaceMetrics[]>([]);
   const [questionResults, setQuestionResults] = useState<QuestionResult[]>([]);
 
@@ -158,26 +153,12 @@ const InterviewRoom: React.FC = () => {
     const m = metricsSnapshotRef.current;
 
     try {
-      let response;
-      try {
-        response = await respond(sessionId, {
-          answer: answerText.trim(),
-          eye_contact: m.eyeContact,
-          stress: m.stress,
-          confidence: m.confidence,
-        });
-      } catch {
-        // API unreachable — use local fallback
-        const nextQ = FALLBACK_QUESTIONS[questionIndex + 1];
-        response = {
-          next_question: nextQ,
-          feedback_hint: questionIndex % 2 === 0
-            ? "Good structure. Try to quantify your impact with specific numbers."
-            : "Strong answer. Maintain eye contact when discussing key points.",
-          is_complete: !nextQ,
-          score: Math.round(60 + Math.random() * 30),
-        };
-      }
+      const response = await respond(sessionId, {
+        answer: answerText.trim(),
+        eye_contact: m.eyeContact,
+        stress: m.stress,
+        confidence: m.confidence,
+      });
 
       const result: QuestionResult = {
         question: currentQuestion,
@@ -229,7 +210,7 @@ const InterviewRoom: React.FC = () => {
           navigate('/results', { state: { results: interviewResults } });
         }, 1500);
       } else if (response.next_question) {
-        setQuestionIndex(prev => prev + 1);
+        setQuestionCount(prev => prev + 1);
         const interviewerMsg: Message = {
           id: Date.now().toString() + '-q',
           role: 'interviewer',
@@ -239,10 +220,19 @@ const InterviewRoom: React.FC = () => {
         };
         setMessages(prev => [...prev, interviewerMsg]);
       }
+    } catch (err) {
+      // Show the error in chat so the user knows what's wrong
+      const errMsg: Message = {
+        id: Date.now().toString() + '-err',
+        role: 'interviewer',
+        content: `⚠️ Backend error: ${err instanceof Error ? err.message : 'Could not reach the interview server. Make sure the backend is running on port 8000.'}`,
+        timestamp: new Date(),
+      };
+      setMessages(prev => [...prev, errMsg]);
     } finally {
       setIsThinking(false);
     }
-  }, [sessionId, questionIndex, currentQuestion, metricsHistory, questionResults, messages, navigate, setup.company]);
+  }, [sessionId, currentQuestion, metricsHistory, questionResults, messages, navigate]);
 
   const handleSendText = () => {
     if (textInput.trim()) submitAnswer(textInput);
@@ -339,7 +329,7 @@ const InterviewRoom: React.FC = () => {
             <div style={{ fontWeight: 700, color: '#e8e8f0', fontSize: 15 }}>{interviewerName}</div>
             <div style={{ fontSize: 12, color: '#555577', display: 'flex', alignItems: 'center', gap: 6 }}>
               <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#22c55e' }} />
-              Interview in progress — Question {questionIndex + 1}
+              Interview in progress — Question {questionCount + 1}
             </div>
           </div>
           {setup.company && (
@@ -841,15 +831,15 @@ const InterviewRoom: React.FC = () => {
               Progress
             </div>
             <div style={{ display: 'flex', gap: 6 }}>
-              {FALLBACK_QUESTIONS.map((_, i) => (
+              {Array.from({ length: 8 }).map((_, i) => (
                 <div
                   key={i}
                   style={{
                     flex: 1, height: 4,
                     borderRadius: 2,
-                    background: i < questionIndex
+                    background: i < questionCount
                       ? companyConfig.accentColor
-                      : i === questionIndex
+                      : i === questionCount
                       ? `${companyConfig.accentColor}55`
                       : '#2a2a3e',
                     transition: 'background 0.3s ease',
@@ -858,12 +848,12 @@ const InterviewRoom: React.FC = () => {
               ))}
             </div>
             <div style={{ fontSize: 12, color: '#555577', marginTop: 8 }}>
-              Question {questionIndex + 1}
+              Question {questionCount + 1} of ~8
             </div>
           </div>
 
           {/* End Early */}
-          {!isComplete && questionIndex >= 1 && (
+          {!isComplete && questionCount >= 1 && (
             <button
               onClick={() => {
                 const avgMetric = (key: keyof FaceMetrics) =>
