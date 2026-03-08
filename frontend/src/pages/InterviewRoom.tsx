@@ -157,37 +157,36 @@ const InterviewRoom: React.FC = () => {
           video: { width: { ideal: 1280 }, height: { ideal: 720 } },
           audio: false,
         });
-        // Also grab audio track for the video recording (separate from STT mic)
-        let combinedStream = videoStream;
-        try {
-          const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-          const audioTrack = audioStream.getAudioTracks()[0];
-          if (audioTrack) {
-            combinedStream = new MediaStream([...videoStream.getTracks(), audioTrack]);
-          }
-        } catch { /* no audio in recording — fine */ }
-
         cameraStreamRef.current = videoStream;
         if (videoRef.current) {
           videoRef.current.srcObject = videoStream;
           videoRef.current.play().catch(() => {});
         }
 
-        // Start video recording
+        // Start video recording — video-only to avoid mic conflicts with volume analyser
         videoChunksRef.current = [];
         recordingStartRef.current = Date.now();
         videoTimestampsRef.current = [];
         try {
-          const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
-            ? 'video/webm;codecs=vp9'
-            : MediaRecorder.isTypeSupported('video/webm')
-            ? 'video/webm'
-            : '';
-          const recorder = new MediaRecorder(combinedStream, mimeType ? { mimeType } : undefined);
-          recorder.ondataavailable = e => { if (e.data.size > 0) videoChunksRef.current.push(e.data); };
-          recorder.start(1000);
+          // Pick best supported mimeType
+          const mimeType = [
+            'video/webm;codecs=vp8,opus',
+            'video/webm;codecs=vp8',
+            'video/webm',
+            'video/mp4',
+          ].find(t => MediaRecorder.isTypeSupported(t)) ?? '';
+
+          const recorderOptions = mimeType ? { mimeType } : {};
+          const recorder = new MediaRecorder(videoStream, recorderOptions);
+          recorder.ondataavailable = (e) => {
+            if (e.data && e.data.size > 0) videoChunksRef.current.push(e.data);
+          };
+          recorder.onerror = (e) => console.warn('[VideoRecorder] error:', e);
+          recorder.start(500); // chunk every 500ms — smaller chunks = more reliable
           videoRecorderRef.current = recorder;
-        } catch { /* recording unsupported */ }
+        } catch (err) {
+          console.warn('[VideoRecorder] MediaRecorder not supported:', err);
+        }
 
         setCameraPermission('granted');
       } catch {
@@ -327,13 +326,18 @@ const InterviewRoom: React.FC = () => {
         // Stop video recording and compile blob
         let videoUrl: string | undefined;
         const videoTimestamps = [...videoTimestampsRef.current];
-        if (videoRecorderRef.current && videoRecorderRef.current.state !== 'inactive') {
-          await new Promise<void>(res => {
-            videoRecorderRef.current!.onstop = () => res();
-            videoRecorderRef.current!.stop();
+        const recorder = videoRecorderRef.current;
+        if (recorder && recorder.state !== 'inactive') {
+          await new Promise<void>((res) => {
+            recorder.onstop = () => res();
+            // requestData() flushes the in-progress chunk before stop()
+            try { recorder.requestData(); } catch {}
+            recorder.stop();
           });
           if (videoChunksRef.current.length > 0) {
-            const blob = new Blob(videoChunksRef.current, { type: 'video/webm' });
+            // Use the mimeType the recorder actually used
+            const recMime = recorder.mimeType || 'video/webm';
+            const blob = new Blob(videoChunksRef.current, { type: recMime });
             videoUrl = URL.createObjectURL(blob);
           }
         }

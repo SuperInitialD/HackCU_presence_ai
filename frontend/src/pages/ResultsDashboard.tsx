@@ -358,8 +358,14 @@ const SessionRecording: React.FC<{
         ref={videoRef}
         src={videoUrl}
         controls
+        playsInline
+        preload="metadata"
         onTimeUpdate={() => setCurrentTime(videoRef.current?.currentTime ?? 0)}
-        onLoadedMetadata={() => setDuration(videoRef.current?.duration ?? 0)}
+        onLoadedMetadata={() => {
+          const d = videoRef.current?.duration ?? 0;
+          setDuration(isFinite(d) ? d : 0);
+        }}
+        onError={(e) => console.warn('[SessionRecording] video error:', (e.target as HTMLVideoElement).error)}
         style={{ width: '100%', borderRadius: 12, background: '#0f0f13', maxHeight: 400, marginBottom: 16 }}
       />
 
