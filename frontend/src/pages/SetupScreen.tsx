@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Upload, Link, FileText, ChevronRight, CheckCircle, AlertCircle, Loader2, Github, Linkedin } from 'lucide-react';
+import { Upload, Link, FileText, ChevronRight, CheckCircle, AlertCircle, Loader2, Github, Linkedin, Lock } from 'lucide-react';
 import { getCompany } from '../components/CompanyConfig';
 import { parseResume, fetchJD, startSession } from '../api/client';
 import type { InterviewSetup } from '../types';
@@ -25,6 +25,9 @@ const SetupScreen: React.FC = () => {
   const [resumeError, setResumeError] = useState('');
   const [jdError, setJdError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [interviewMode, setInterviewMode] = useState<'behavioral' | 'technical' | 'full'>('behavioral');
+  const [technicalSubMode, setTechnicalSubMode] = useState<'verbal' | 'coding'>('verbal');
 
   const accentColor = defaultConfig.accentColor;
 
@@ -72,6 +75,15 @@ const SetupScreen: React.FC = () => {
 
   const handleStart = async () => {
     setIsStarting(true);
+    const interviewType =
+      interviewMode === 'behavioral'
+        ? 'behavioral'
+        : interviewMode === 'full'
+        ? 'full'
+        : technicalSubMode === 'verbal'
+        ? 'technical_verbal'
+        : 'behavioral'; // fallback — coding not yet selectable
+
     try {
       const session = await startSession({
         company: companyFreeText.trim() || undefined,
@@ -79,6 +91,7 @@ const SetupScreen: React.FC = () => {
         job_description: jdText || undefined,
         github_url: githubUrl.trim() || undefined,
         linkedin_url: linkedinUrl.trim() || undefined,
+        interview_type: interviewType,
       });
 
       const setup: InterviewSetup = {
@@ -86,6 +99,7 @@ const SetupScreen: React.FC = () => {
         resumeText,
         jobDescription: jdText,
         sessionId: session.session_id,
+        interviewType,
       };
 
       navigate('/interview', {
@@ -94,6 +108,7 @@ const SetupScreen: React.FC = () => {
           firstQuestion: session.first_question,
           sessionId: session.session_id,
           interviewerName: session.interviewer_name,
+          interviewType,
         },
       });
     } catch (err) {
@@ -146,6 +161,146 @@ const SetupScreen: React.FC = () => {
 
       <div style={{ width: '100%', maxWidth: 860, display: 'flex', flexDirection: 'column', gap: 28 }}>
 
+        {/* Interview Mode */}
+        <motion.section
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.05, duration: 0.5 }}
+        >
+          <h2 style={{ fontSize: 14, fontWeight: 600, color: '#8888aa', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>
+            01 — Interview Mode
+          </h2>
+          {/* Top-level tabs */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr 1fr',
+            gap: 12,
+            marginBottom: 14,
+          }}>
+            {([
+              { id: 'behavioral', icon: '🎯', label: 'Behavioral', desc: 'STAR-format questions on soft skills, experience, and leadership.' },
+              { id: 'technical', icon: '⚙️', label: 'Technical', desc: 'Concept-based and problem-solving questions tailored to your background.' },
+              { id: 'full', icon: '🚀', label: 'Full Interview', desc: 'Complete interview — behavioral first, then technical. Best for full practice.' },
+            ] as const).map(({ id, icon, label, desc }) => (
+              <button
+                key={id}
+                onClick={() => setInterviewMode(id)}
+                style={{
+                  background: interviewMode === id ? `${accentColor}18` : '#16161e',
+                  border: `2px solid ${interviewMode === id ? accentColor : '#2a2a3e'}`,
+                  borderRadius: 14,
+                  padding: '18px 16px',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  transition: 'all 0.2s ease',
+                  outline: 'none',
+                  boxShadow: interviewMode === id ? `0 0 16px ${accentColor}22` : 'none',
+                }}
+              >
+                <div style={{
+                  fontSize: 15,
+                  fontWeight: 700,
+                  color: interviewMode === id ? accentColor : '#c8c8e0',
+                  marginBottom: 4,
+                  letterSpacing: '-0.01em',
+                }}>
+                  {icon} {label}
+                </div>
+                <div style={{ fontSize: 11, color: '#555577', lineHeight: 1.5 }}>
+                  {desc}
+                </div>
+              </button>
+            ))}
+          </div>
+
+          {/* Technical sub-options */}
+          <AnimatePresence>
+            {(interviewMode === 'technical') && (
+              <motion.div
+                key="technical-sub"
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                style={{ overflow: 'hidden' }}
+              >
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, paddingTop: 4 }}>
+                  {/* Verbal Technical */}
+                  <button
+                    onClick={() => setTechnicalSubMode('verbal')}
+                    style={{
+                      background: technicalSubMode === 'verbal' ? `${accentColor}18` : '#16161e',
+                      border: `2px solid ${technicalSubMode === 'verbal' ? accentColor : '#2a2a3e'}`,
+                      borderRadius: 12,
+                      padding: '16px 18px',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      transition: 'all 0.2s ease',
+                      outline: 'none',
+                    }}
+                  >
+                    <div style={{
+                      fontSize: 13,
+                      fontWeight: 700,
+                      color: technicalSubMode === 'verbal' ? accentColor : '#c8c8e0',
+                      marginBottom: 6,
+                    }}>
+                      💬 Verbal Technical
+                    </div>
+                    <div style={{ fontSize: 12, color: '#555577', lineHeight: 1.5 }}>
+                      Conceptual questions tailored to your resume and JD. No coding.
+                    </div>
+                  </button>
+
+                  {/* Coding Interview — Coming Soon */}
+                  <div
+                    style={{
+                      background: '#12121a',
+                      border: '2px solid #1e1e2e',
+                      borderRadius: 12,
+                      padding: '16px 18px',
+                      cursor: 'not-allowed',
+                      textAlign: 'left',
+                      opacity: 0.5,
+                      position: 'relative',
+                      userSelect: 'none',
+                    }}
+                  >
+                    <div style={{
+                      position: 'absolute',
+                      top: 10,
+                      right: 10,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      background: '#2a2a3e',
+                      borderRadius: 20,
+                      padding: '2px 8px',
+                      fontSize: 10,
+                      fontWeight: 700,
+                      color: '#8888aa',
+                      letterSpacing: '0.04em',
+                    }}>
+                      <Lock size={9} />
+                      COMING SOON
+                    </div>
+                    <div style={{
+                      fontSize: 13,
+                      fontWeight: 700,
+                      color: '#555577',
+                      marginBottom: 6,
+                    }}>
+                      💻 Coding Interview
+                    </div>
+                    <div style={{ fontSize: 12, color: '#3a3a55', lineHeight: 1.5 }}>
+                      Share your screen. AI monitors your code and assists when needed.
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </motion.section>
+
         {/* Target Company / Role */}
         <motion.section
           initial={{ opacity: 0, y: 20 }}
@@ -153,7 +308,7 @@ const SetupScreen: React.FC = () => {
           transition={{ delay: 0.1, duration: 0.5 }}
         >
           <h2 style={{ fontSize: 14, fontWeight: 600, color: '#8888aa', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>
-            01 — Target Company / Role <span style={{ color: '#555577', fontWeight: 400 }}>(optional)</span>
+            02 — Target Company / Role <span style={{ color: '#555577', fontWeight: 400 }}>(optional)</span>
           </h2>
           <div style={{
             background: '#16161e',
@@ -193,7 +348,7 @@ const SetupScreen: React.FC = () => {
           transition={{ delay: 0.15, duration: 0.5 }}
         >
           <h2 style={{ fontSize: 14, fontWeight: 600, color: '#8888aa', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>
-            02 — Profiles <span style={{ color: '#555577', fontWeight: 400 }}>(optional)</span>
+            03 — Profiles <span style={{ color: '#555577', fontWeight: 400 }}>(optional)</span>
           </h2>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {/* GitHub */}
@@ -237,7 +392,7 @@ const SetupScreen: React.FC = () => {
           transition={{ delay: 0.2, duration: 0.5 }}
         >
           <h2 style={{ fontSize: 14, fontWeight: 600, color: '#8888aa', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>
-            03 — Upload Resume <span style={{ color: '#555577', fontWeight: 400 }}>(optional)</span>
+            04 — Upload Resume <span style={{ color: '#555577', fontWeight: 400 }}>(optional)</span>
           </h2>
           <div
             onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
@@ -297,7 +452,7 @@ const SetupScreen: React.FC = () => {
           transition={{ delay: 0.3, duration: 0.5 }}
         >
           <h2 style={{ fontSize: 14, fontWeight: 600, color: '#8888aa', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>
-            04 — Job Description <span style={{ color: '#555577', fontWeight: 400 }}>(optional)</span>
+            05 — Job Description <span style={{ color: '#555577', fontWeight: 400 }}>(optional)</span>
           </h2>
           <div style={{
             background: '#16161e',

@@ -16,6 +16,7 @@ export interface InterviewSetup {
   resumeText?: string;
   jobDescription?: string;
   sessionId?: string;
+  interviewType?: string;
 }
 
 export interface Message {

@@ -1,16 +1,16 @@
 import os
 import json
 import re
-from openai import OpenAI
+import anthropic
 from company_presets import COMPANY_PRESETS
 
 _client = None
 
 
-def _get_client() -> OpenAI:
+def _get_client() -> anthropic.Anthropic:
     global _client
     if _client is None:
-        _client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+        _client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
     return _client
 
 
@@ -19,21 +19,15 @@ def _get_preset(company: str) -> dict:
     return COMPANY_PRESETS.get(key, COMPANY_PRESETS["generic"])
 
 
-def _default_checklist() -> dict:
-    return {
-        "behavioral": {
-            "introduction":   False,  # background, career story, tell me about yourself
-            "experience":     False,  # past roles, key responsibilities, professional history
-            "star_scenario":  False,  # STAR method — conflict, failure, leadership moment
-            "skills_strengths": False, # what they bring, self-assessment, growth areas
-        },
-        "technical": {
-            "concepts":        False, # technical concepts relevant to JD (no coding)
-            "problem_solving": False, # how they approach & break down technical problems
-            "project_dive":    False, # deep dive on a specific past technical project
-            "role_specific":   False, # role-specific knowledge from JD requirements
-        },
-    }
+def _default_checklist(interview_type: str = "behavioral") -> dict:
+    behavioral = {"introduction": False, "experience": False, "star_scenario": False, "skills_strengths": False}
+    technical  = {"concepts": False, "problem_solving": False, "project_dive": False, "role_specific": False}
+    if interview_type == "technical_verbal":
+        return {"behavioral": {k: True for k in behavioral}, "technical": technical}
+    if interview_type == "behavioral":
+        return {"behavioral": behavioral, "technical": {k: True for k in technical}}
+    # full — both active
+    return {"behavioral": behavioral, "technical": technical}
 
 
 def _build_system_prompt(
@@ -42,6 +36,7 @@ def _build_system_prompt(
     resume_text: str,
     github_url: str = "",
     linkedin_url: str = "",
+    interview_type: str = "behavioral",
 ) -> str:
     preset_key = company.lower().strip()
     known = preset_key in COMPANY_PRESETS
@@ -78,20 +73,19 @@ def _build_system_prompt(
 
 ## Interview Structure
 
-You MUST work through these 8 sub-sections in order, completing each before advancing.
-**Do not skip sections. Do not blend behavioral and technical — finish all 4 behavioral items first, then do technical.**
+{"BEHAVIORAL-ONLY: Cover only the 4 behavioral sections. Mark all technical sections true immediately." if interview_type == "behavioral" else "TECHNICAL VERBAL: Skip behavioral (mark all true immediately). Focus on the 4 technical sections only. No coding." if interview_type == "technical_verbal" else "FULL INTERVIEW: Complete all 8 sections in order — behavioral first, then technical."}
 
-### Part 1 — Behavioral (complete in order)
-1. **introduction** — Background & Introduction: career story, how they got here, what drives them. Reference resume specifics.
-2. **experience** — Professional Experience: dig into 1-2 key past roles or projects. What did they own? What was the impact? Push for specifics.
-3. **star_scenario** — STAR Scenario: ask about a real challenge — conflict with a teammate, a time they failed, a leadership moment. Require Situation/Task/Action/Result structure. Follow up if any part is missing.
-4. **skills_strengths** — Skills & Strengths: what technical and soft skills do they bring? What are they actively improving? Be candid — ask for self-critique.
+### Behavioral Sections {"(SKIP — mark all true)" if interview_type == "technical_verbal" else "(Complete in order)"}
+1. **introduction** — Background & Introduction: career story, how they got here, what drives them.
+2. **experience** — Professional Experience: dig into 1-2 key past roles or projects. What did they own? What was the impact?
+3. **star_scenario** — STAR Scenario: a real challenge — conflict, failure, leadership. Require Situation/Task/Action/Result. Follow up if any part is missing.
+4. **skills_strengths** — Skills & Strengths: what they bring, self-assessment, growth areas.
 
-### Part 2 — Technical (no coding — conceptual and verbal only)
-5. **concepts** — Technical Concepts: 2-3 technical questions directly tied to the JD and resume stack (e.g. system design tradeoffs, CS fundamentals, architecture decisions). No code.
-6. **problem_solving** — Problem-Solving Approach: give them a scenario (from the JD context) and ask how they'd break it down. Probe for structure and depth.
-7. **project_dive** — Project Deep-Dive: pick a project from their resume or GitHub. Ask what they built, their role, the hard parts, what they'd do differently.
-8. **role_specific** — Role-Specific Knowledge: 1-2 questions unique to this role/company from the JD. What do they know about the domain? What would they do in the first 30 days?
+### Technical Sections {"(SKIP — mark all true)" if interview_type == "behavioral" else "(Complete in order — no coding)"}
+5. **concepts** — Technical Concepts tied to the JD/resume stack. System design tradeoffs, CS fundamentals, architecture decisions.
+6. **problem_solving** — give a scenario from the JD context, ask how they'd break it down. Probe for structure.
+7. **project_dive** — pick a project from resume/GitHub. Ask what they built, their role, the hard parts, what they'd change.
+8. **role_specific** — questions unique to this role from the JD. Domain knowledge, first 30 days.
 
 ---
 
@@ -182,33 +176,36 @@ class AIInterviewer:
         resume_text: str,
         github_url: str = "",
         linkedin_url: str = "",
+        interview_type: str = "behavioral",
     ) -> str:
-        system_prompt = _build_system_prompt(company, jd, resume_text, github_url, linkedin_url)
+        system_prompt = _build_system_prompt(company, jd, resume_text, github_url, linkedin_url, interview_type)
         self._system_prompts[session_id] = system_prompt
-        self._checklists[session_id] = _default_checklist()
+        self._checklists[session_id] = _default_checklist(interview_type)
 
         preset = _get_preset(company)
         has_resume = bool(resume_text.strip())
 
+        if interview_type == "technical_verbal":
+            open_focus = "open with a technical question relevant to their resume and the job description — skip the personal intro, get straight into the technical portion."
+        else:
+            open_focus = "open with 'tell me about yourself' or a tailored opener based on their resume. Keep it warm."
+
         opening_instruction = (
             f"Begin the interview. Greet the candidate warmly, briefly introduce yourself as a "
-            f"{preset['name']} interviewer, then open with the Introduction section — typically "
-            f"'tell me about yourself' or a tailored opener based on their resume. "
+            f"{preset['name']} interviewer, then {open_focus} "
             f"{'Reference their background specifically.' if has_resume else ''} "
             f"Keep it natural and concise."
         )
 
         client = _get_client()
-        response = client.chat.completions.create(
-            model="gpt-4o",
+        response = client.messages.create(
+            model="claude-sonnet-4-6",
             max_tokens=512,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": opening_instruction},
-            ],
+            system=system_prompt,
+            messages=[{"role": "user", "content": opening_instruction}],
         )
 
-        raw = response.choices[0].message.content or ""
+        raw = response.content[0].text
         parsed = _parse_response(raw)
 
         if "checklist" in parsed:
@@ -243,13 +240,14 @@ class AIInterviewer:
                 })
 
         client = _get_client()
-        response = client.chat.completions.create(
-            model="gpt-4o",
+        response = client.messages.create(
+            model="claude-sonnet-4-6",
             max_tokens=512,
-            messages=[{"role": "system", "content": system_prompt}] + messages,
+            system=system_prompt,
+            messages=messages,
         )
 
-        raw = response.choices[0].message.content or ""
+        raw = response.content[0].text
         parsed = _parse_response(raw)
 
         if "checklist" in parsed:
@@ -288,13 +286,14 @@ Scores out of 10. Be honest and specific."""
         messages.append({"role": "user", "content": evaluation_prompt})
 
         client = _get_client()
-        response = client.chat.completions.create(
-            model="gpt-4o",
+        response = client.messages.create(
+            model="claude-sonnet-4-6",
             max_tokens=1024,
-            messages=[{"role": "system", "content": system_prompt or "You are an expert interview evaluator."}] + messages,
+            system=system_prompt or "You are an expert interview evaluator.",
+            messages=messages,
         )
 
-        raw = response.choices[0].message.content or ""
+        raw = response.content[0].text
         parsed = _parse_response(raw)
 
         self._system_prompts.pop(session_id, None)
