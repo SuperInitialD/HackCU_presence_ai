@@ -20,18 +20,28 @@ def _get_preset(company: str) -> dict:
 
 
 def _build_system_prompt(company: str, jd: str, resume_text: str) -> str:
+    # Check if this matches a known preset or is free-form text
+    preset_key = company.lower().strip()
+    known = preset_key in COMPANY_PRESETS
     preset = _get_preset(company)
 
     focus_areas_str = "\n".join(f"- {f}" for f in preset["focus_areas"])
     sample_q_str = "\n".join(f"- {q}" for q in preset["sample_questions"][:4])
 
-    system = f"""You are conducting a real-time mock interview for {preset['name']}.
+    # For free-form company input, build a dynamic persona
+    if not known and company.strip():
+        company_context = f"The candidate is targeting: {company}. Adapt your interview style accordingly."
+    else:
+        company_context = ""
+
+    system = f"""You are conducting a real-time mock interview for {company if company.strip() else 'a software engineering role'}.
 
 ## Your Interviewer Persona
 {preset['persona']}
 
 ## Interview Style Notes
 {preset['style_notes']}
+{company_context}
 
 ## Key Focus Areas for This Interview
 {focus_areas_str}
