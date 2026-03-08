@@ -86,10 +86,11 @@ async def start_session(body: StartSessionRequest):
     """
     session_id = str(uuid.uuid4())
 
-    # Validate company — default to generic if unknown
-    company_key = body.company.lower().strip()
+    # If company matches a known preset key, use it; otherwise pass raw string for free-form handling
+    company_raw = body.company.strip() if body.company else ""
+    company_key = company_raw.lower()
     if company_key not in COMPANY_PRESETS:
-        company_key = "generic"
+        company_key = company_raw  # pass free-form text through to interviewer
 
     try:
         opening_message = interviewer.start_session(
@@ -114,7 +115,7 @@ async def start_session(body: StartSessionRequest):
     }
 
     preset = COMPANY_PRESETS.get(company_key, COMPANY_PRESETS["generic"])
-    interviewer_name = preset.get("interviewer_name", f"{preset['name']} Interviewer")
+    interviewer_name = preset.get("interviewer_name", "AI Interviewer")
 
     return {
         "session_id": session_id,
@@ -302,6 +303,20 @@ async def fetch_jd(url: str = Query(..., description="URL of the job description
         "company": result.get("company", ""),
         "description": result.get("description", ""),
     }
+
+
+@app.post("/api/analyze-frame")
+async def analyze_frame(file: UploadFile = File(...)):
+    """Analyze a webcam frame for eye contact, stress, and confidence."""
+    image_bytes = await file.read()
+    if not image_bytes:
+        raise HTTPException(status_code=400, detail="Empty image")
+    try:
+        from vision import analyze_frame as _analyze
+        result = _analyze(image_bytes)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Vision analysis failed: {str(e)}")
+    return result
 
 
 @app.get("/api/companies")
