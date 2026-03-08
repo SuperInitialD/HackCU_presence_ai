@@ -57,7 +57,8 @@ class StartSessionRequest(BaseModel):
     resume_text: Optional[str] = ""
     github_url: Optional[str] = ""
     linkedin_url: Optional[str] = ""
-    interview_type: Optional[str] = "behavioral"  # behavioral | technical_verbal
+    interview_type: Optional[str] = "behavioral"  # behavioral | technical_verbal | full
+    selected_sections: Optional[list] = None  # e.g. ["introduction","experience","concepts"] — None means all
 
 
 class MetricsModel(BaseModel):
@@ -107,6 +108,7 @@ async def start_session(body: StartSessionRequest):
             github_url=body.github_url or "",
             linkedin_url=body.linkedin_url or "",
             interview_type=interview_type,
+            selected_sections=body.selected_sections,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to start session: {str(e)}")
@@ -119,6 +121,7 @@ async def start_session(body: StartSessionRequest):
         "github_url": body.github_url or "",
         "linkedin_url": body.linkedin_url or "",
         "interview_type": interview_type,
+        "selected_sections": body.selected_sections,
         "conversation_history": [
             {"role": "assistant", "content": opening_message}
         ],
