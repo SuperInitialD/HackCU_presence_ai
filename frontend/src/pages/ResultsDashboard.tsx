@@ -428,9 +428,9 @@ const ResultsDashboard: React.FC = () => {
                 </div>
                 {results.answer_quality && (
                   <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    <MetricGauge label="STAR Structure" value={results.answer_quality.star_structure * 10} type="bar" />
-                    <MetricGauge label="Specificity" value={results.answer_quality.specificity * 10} type="bar" />
-                    <MetricGauge label="Depth" value={results.answer_quality.depth * 10} type="bar" />
+                    <MetricGauge label="Inflection" value={(results.answer_quality.inflection ?? results.answer_quality.star_structure) * 10} type="bar" />
+                    <MetricGauge label="Clarity" value={(results.answer_quality.clarity ?? results.answer_quality.specificity) * 10} type="bar" />
+                    <MetricGauge label="Conciseness" value={(results.answer_quality.conciseness ?? results.answer_quality.depth) * 10} type="bar" />
                   </div>
                 )}
                 {results.hiring_recommendation && (
@@ -510,6 +510,7 @@ const ResultsDashboard: React.FC = () => {
         )}
 
         {/* ── Strengths & Improvements ── */}
+        {(results.strengths.length > 0 || results.improvements.length > 0) && (
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -560,6 +561,7 @@ const ResultsDashboard: React.FC = () => {
             </ul>
           </div>
         </motion.div>
+        )}
 
         {/* ── Resume Feedback ── */}
         {results.resume_feedback != null && (

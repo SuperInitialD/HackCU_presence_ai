@@ -55,6 +55,9 @@ export interface AnswerQuality {
   specificity: number;
   depth: number;
   overall: number;
+  inflection: number;
+  clarity: number;
+  conciseness: number;
   summary: string;
   per_question: AnswerQualityPerQuestion[];
 }

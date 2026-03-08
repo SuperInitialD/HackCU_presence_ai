@@ -375,8 +375,9 @@ class AIInterviewer:
             "  \"overall_score\": {\"total\": 7.5, \"communication\": 8.0, \"technical_depth\": 7.0, \"problem_solving\": 7.5, \"culture_fit\": 8.0, \"confidence\": 7.0},\n"
             "  \"answer_quality\": {\n"
             "    \"star_structure\": 7.0, \"specificity\": 6.5, \"depth\": 7.5, \"overall\": 7.0,\n"
+            "    \"inflection\": 7.0, \"clarity\": 7.5, \"conciseness\": 6.5,\n"
             "    \"summary\": \"1-2 sentences on how well they answered overall\",\n"
-            "    \"per_question\": [{{\"question\": \"...\"  , \"answer_summary\": \"...\", \"score\": 7, \"feedback\": \"...\"}}]\n"
+            "    \"per_question\": [{\"question\": \"...\", \"answer_summary\": \"...\", \"score\": 7, \"feedback\": \"...\"}]\n"
             "  },\n"
             "  \"strengths\": [\"Specific strength with example\", \"Strength 2\", \"Strength 3\"],\n"
             "  \"areas_for_improvement\": [\"Actionable area 1\", \"Area 2\"],\n"
@@ -387,6 +388,10 @@ class AIInterviewer:
             "  \"summary\": \"2-3 honest sentences directly to the candidate.\"\n"
             "}\n\n"
             "Scores out of 10. Be specific — reference actual things said.\n"
+            "Speech quality scores (infer from text — how they likely sounded):\n"
+            "  inflection: vocal variety and engagement (monotone vs expressive)\n"
+            "  clarity: clear, organized communication; no rambling\n"
+            "  conciseness: got to the point without excessive filler or over-explanation\n"
             "Set resume_feedback to null if no resume. Set linkedin_feedback to null if no LinkedIn.\n"
             + resume_section + linkedin_section
         )
@@ -395,13 +400,14 @@ class AIInterviewer:
         messages.append({"role": "user", "content": evaluation_prompt})
 
         client = _get_client()
-        response = client.chat.completions.create(
-            model="gpt-4o",
+        response = client.messages.create(
+            model="claude-sonnet-4-6",
             max_tokens=2048,
-            messages=[{"role": "system", "content": system_prompt or "You are an expert interview evaluator."}] + messages,
+            system=system_prompt or "You are an expert interview evaluator.",
+            messages=messages,
         )
 
-        raw = response.choices[0].message.content or ""
+        raw = response.content[0].text
         parsed = _parse_response(raw)
 
         self._system_prompts.pop(session_id, None)
