@@ -1,31 +1,47 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import type { FaceMetrics } from '../types';
+import {
+  FaceLandmarker,
+  PoseLandmarker,
+  FilesetResolver,
+} from '@mediapipe/tasks-vision';
+import { extractMetrics, smoothMetrics } from '../utils/cvMetrics';
+import type { CVMetricsFrame } from '../types/interview';
 
-const API_BASE = '/api';
-const FRAME_INTERVAL_MS = 1000; // analyze once per second — not worth more
+const FRAME_INTERVAL_MS = 100; // ~10 fps for responsive client-side analysis
 
-function smoothMetric(prev: number, next: number, alpha = 0.35): number {
-  return prev * (1 - alpha) + next * alpha;
+/** Convert CVMetricsFrame (0-1) to FaceMetrics (0-100). Stress = inverse of confidence. */
+function cvToFaceMetrics(cv: CVMetricsFrame): FaceMetrics {
+  return {
+    eyeContact: Math.round(cv.eyeContact * 100),
+    stress: Math.round((1 - cv.confidence) * 100),
+    confidence: Math.round(cv.confidence * 100),
+  };
 }
 
 export function useFaceAnalysis(
   videoRef: React.RefObject<HTMLVideoElement | null>,
-  canvasRef: React.RefObject<HTMLCanvasElement | null>, // overlay canvas — for indicators only
+  canvasRef: React.RefObject<HTMLCanvasElement | null>,
   enabled: boolean
 ) {
-  const [metrics, setMetrics] = useState<FaceMetrics>({ eyeContact: 75, stress: 20, confidence: 70 });
+  const [metrics, setMetrics] = useState<FaceMetrics>({
+    eyeContact: 75,
+    stress: 20,
+    confidence: 70,
+  });
   const [isReady, setIsReady] = useState(false);
-  const smoothedRef = useRef<FaceMetrics>({ eyeContact: 75, stress: 20, confidence: 70 });
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const runningRef = useRef(false);
-
-  // Dedicated hidden canvas for frame capture — never shown to the user
+  const smoothedCvRef = useRef<CVMetricsFrame | undefined>(undefined);
+  const frameIdRef = useRef<number | null>(null);
+  const lastFrameTimeRef = useRef<number>(0);
+  const faceLandmarkerRef = useRef<FaceLandmarker | null>(null);
+  const poseLandmarkerRef = useRef<PoseLandmarker | null>(null);
+  const initPromiseRef = useRef<Promise<void> | null>(null);
   const captureCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
     const c = document.createElement('canvas');
-    c.width = 320;   // low res is fine for face detection
-    c.height = 240;
+    c.width = 640;
+    c.height = 480;
     c.style.display = 'none';
     document.body.appendChild(c);
     captureCanvasRef.current = c;
@@ -35,75 +51,165 @@ export function useFaceAnalysis(
     };
   }, []);
 
-  const captureAndAnalyze = useCallback(async () => {
-    if (!enabled || runningRef.current) return;
-    const video = videoRef.current;
-    const captureCanvas = captureCanvasRef.current;
-    if (!video || video.readyState < 2 || !captureCanvas) return;
+  const initMediaPipe = useCallback(async () => {
+    if (initPromiseRef.current) return initPromiseRef.current;
 
-    runningRef.current = true;
-    try {
-      const ctx = captureCanvas.getContext('2d');
-      if (!ctx) return;
-
-      // Draw to the hidden capture canvas — never touches the visible overlay
-      ctx.drawImage(video, 0, 0, captureCanvas.width, captureCanvas.height);
-
-      const blob: Blob | null = await new Promise(resolve =>
-        captureCanvas.toBlob(resolve, 'image/jpeg', 0.6)
+    initPromiseRef.current = (async () => {
+      const vision = await FilesetResolver.forVisionTasks(
+        'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.32/wasm'
       );
-      if (!blob) return;
 
-      const formData = new FormData();
-      formData.append('file', blob, 'frame.jpg');
+      let faceLandmarker: FaceLandmarker;
+      let poseLandmarker: PoseLandmarker | null;
 
-      const res = await fetch(`${API_BASE}/analyze-frame`, {
-        method: 'POST',
-        body: formData,
-        signal: AbortSignal.timeout(3000), // don't let slow requests pile up
-      });
+      const faceOpts = {
+        baseOptions: {
+          modelAssetPath:
+            'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',
+          delegate: 'GPU' as const,
+        },
+        outputFaceBlendshapes: true,
+        outputFacialTransformationMatrixes: true,
+        runningMode: 'IMAGE' as const,
+        numFaces: 1,
+      };
+      try {
+        faceLandmarker = await FaceLandmarker.createFromOptions(vision, faceOpts);
+      } catch {
+        faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
+          ...faceOpts,
+          baseOptions: { ...faceOpts.baseOptions, delegate: 'CPU' },
+        });
+      }
 
-      if (!res.ok) return;
-      const data = await res.json();
-
-      if (data.face_detected) {
-        smoothedRef.current = {
-          eyeContact: smoothMetric(smoothedRef.current.eyeContact, data.eye_contact),
-          stress: smoothMetric(smoothedRef.current.stress, data.stress),
-          confidence: smoothMetric(smoothedRef.current.confidence, data.confidence),
-        };
-        setMetrics({ ...smoothedRef.current });
-
-        // Draw a small indicator on the overlay canvas — minimal, just a dot
-        const overlayCanvas = canvasRef.current;
-        if (overlayCanvas) {
-          const oc = overlayCanvas.getContext('2d');
-          if (oc) {
-            oc.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
-            const eyeOk = data.eye_contact > 60;
-            oc.fillStyle = eyeOk ? 'rgba(34,197,94,0.8)' : 'rgba(239,68,68,0.8)';
-            oc.beginPath();
-            oc.arc(overlayCanvas.width - 16, 16, 7, 0, Math.PI * 2);
-            oc.fill();
-          }
+      const poseOpts = {
+        baseOptions: {
+          modelAssetPath:
+            'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',
+          delegate: 'GPU' as const,
+        },
+        runningMode: 'IMAGE' as const,
+        numPoses: 1,
+      };
+      try {
+        poseLandmarker = await PoseLandmarker.createFromOptions(vision, poseOpts);
+      } catch {
+        try {
+          poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
+            ...poseOpts,
+            baseOptions: { ...poseOpts.baseOptions, delegate: 'CPU' },
+          });
+        } catch {
+          poseLandmarker = null;
+          console.warn('[useFaceAnalysis] PoseLandmarker failed to load, using face-only mode');
         }
       }
-    } catch {
-      // Backend not running or timeout — silently skip, keep last values
-    } finally {
-      runningRef.current = false;
+
+      faceLandmarkerRef.current = faceLandmarker;
+      poseLandmarkerRef.current = poseLandmarker;
+    })();
+
+    return initPromiseRef.current;
+  }, []);
+
+  const analyzeFrame = useCallback(() => {
+    const video = videoRef.current;
+    const faceLandmarker = faceLandmarkerRef.current;
+
+    if (
+      !enabled ||
+      !video ||
+      video.videoWidth === 0 ||
+      video.videoHeight === 0 ||
+      !faceLandmarker
+    ) {
+      frameIdRef.current = requestAnimationFrame(analyzeFrame);
+      return;
     }
+
+    const now = performance.now();
+    if (now - lastFrameTimeRef.current < FRAME_INTERVAL_MS) {
+      frameIdRef.current = requestAnimationFrame(analyzeFrame);
+      return;
+    }
+    lastFrameTimeRef.current = now;
+
+    try {
+      const captureCanvas = captureCanvasRef.current;
+      if (!captureCanvas) {
+        frameIdRef.current = requestAnimationFrame(analyzeFrame);
+        return;
+      }
+
+      const ctx = captureCanvas.getContext('2d');
+      if (!ctx) {
+        frameIdRef.current = requestAnimationFrame(analyzeFrame);
+        return;
+      }
+
+      captureCanvas.width = video.videoWidth;
+      captureCanvas.height = video.videoHeight;
+      ctx.drawImage(video, 0, 0);
+
+      const faceResult = faceLandmarker.detect(captureCanvas);
+      const poseResult = poseLandmarkerRef.current
+        ? poseLandmarkerRef.current.detect(captureCanvas)
+        : null;
+
+      const raw = extractMetrics(faceResult, poseResult, now);
+      const smoothed = smoothMetrics(smoothedCvRef.current, raw);
+      smoothedCvRef.current = smoothed;
+
+      const faceMetrics = cvToFaceMetrics(smoothed);
+      setMetrics(faceMetrics);
+
+      // Overlay indicator
+      const overlayCanvas = canvasRef.current;
+      if (overlayCanvas) {
+        const oc = overlayCanvas.getContext('2d');
+        if (oc) {
+          oc.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+          const eyeOk = faceMetrics.eyeContact > 60;
+          oc.fillStyle = eyeOk
+            ? 'rgba(34,197,94,0.8)'
+            : 'rgba(239,68,68,0.8)';
+          oc.beginPath();
+          oc.arc(overlayCanvas.width - 16, 16, 7, 0, Math.PI * 2);
+          oc.fill();
+        }
+      }
+    } catch (err) {
+      console.warn('[useFaceAnalysis] Frame detection failed:', err);
+    }
+
+    frameIdRef.current = requestAnimationFrame(analyzeFrame);
   }, [enabled, videoRef, canvasRef]);
 
   useEffect(() => {
     if (!enabled) return;
-    setIsReady(true);
-    intervalRef.current = setInterval(captureAndAnalyze, FRAME_INTERVAL_MS);
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-      runningRef.current = false;
+
+    let cancelled = false;
+
+    const run = async () => {
+      try {
+        await initMediaPipe();
+        if (cancelled) return;
+        setIsReady(true);
+        frameIdRef.current = requestAnimationFrame(analyzeFrame);
+      } catch (err) {
+        console.warn('[useFaceAnalysis] MediaPipe init failed:', err);
+      }
     };
-  }, [enabled, captureAndAnalyze]);
+
+    run();
+    return () => {
+      cancelled = true;
+      if (frameIdRef.current !== null) {
+        cancelAnimationFrame(frameIdRef.current);
+        frameIdRef.current = null;
+      }
+    };
+  }, [enabled, initMediaPipe, analyzeFrame]);
 
   return { metrics, isReady };
 }
