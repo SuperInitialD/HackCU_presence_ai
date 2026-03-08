@@ -13,6 +13,7 @@ interface LocationState {
   firstQuestion: string;
   sessionId: string;
   interviewerName?: string;
+  interviewType?: string;
 }
 
 
@@ -28,6 +29,7 @@ const InterviewRoom: React.FC = () => {
   const setup: InterviewSetup = state?.setup || { sessionId: `demo-${Date.now()}` };
   const sessionId = state?.sessionId || setup.sessionId || `demo-${Date.now()}`;
   const interviewerName = state?.interviewerName || companyConfig.interviewer;
+  const interviewType = state?.interviewType || setup.interviewType;
 
   const [messages, setMessages] = useState<Message[]>([{
     id: '0',
@@ -426,7 +428,27 @@ const InterviewRoom: React.FC = () => {
             {companyConfig.icon}
           </div>
           <div>
-            <div style={{ fontWeight: 700, color: '#e8e8f0', fontSize: 15 }}>{interviewerName}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontWeight: 700, color: '#e8e8f0', fontSize: 15 }}>{interviewerName}</span>
+              {interviewType && (
+                <span style={{
+                  padding: '2px 9px',
+                  background: `${companyConfig.accentColor}22`,
+                  border: `1px solid ${companyConfig.accentColor}44`,
+                  borderRadius: 20,
+                  fontSize: 11,
+                  fontWeight: 700,
+                  color: companyConfig.accentColor,
+                  letterSpacing: '0.02em',
+                }}>
+                  {interviewType === 'behavioral'
+                    ? 'Behavioral'
+                    : interviewType === 'technical_verbal'
+                    ? 'Technical — Verbal'
+                    : interviewType}
+                </span>
+              )}
+            </div>
             <div style={{ fontSize: 12, color: '#555577', display: 'flex', alignItems: 'center', gap: 6 }}>
               <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#22c55e' }} />
               {isSpeaking ? (
@@ -956,7 +978,12 @@ const InterviewRoom: React.FC = () => {
                   { key: 'role_specific' as const, label: 'Role-Specific Knowledge' },
                 ],
               },
-            ]).map(({ section, label, items }) => {
+            ].filter(({ section }) => {
+              if (!interviewType) return true; // show both when undefined
+              if (interviewType === 'behavioral') return section === 'behavioral';
+              if (interviewType === 'technical' || interviewType === 'technical_verbal') return section === 'technical';
+              return true;
+            })).map(({ section, label, items }) => {
               const sectionMap = checklist[section] as Record<string, boolean>;
               const sectionDone = items.every(i => sectionMap[i.key]);
               return (
