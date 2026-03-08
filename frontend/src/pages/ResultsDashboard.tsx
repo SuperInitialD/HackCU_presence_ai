@@ -230,9 +230,10 @@ const ImprovementCard: React.FC<{ item: FeedbackImprovement; accentColor: string
 
 // ─── QuestionCard (existing per-session questions) ────────────────────────────
 
-const QuestionCard: React.FC<{ qr: InterviewResults['questions'][0]; index: number; accentColor: string }> = ({ qr, index, accentColor }) => {
+const QuestionCard: React.FC<{ qr: InterviewResults['questions'][0]; index: number; accentColor: string; aiScore?: number; aiFeedback?: string }> = ({ qr, index, accentColor, aiScore, aiFeedback }) => {
   const [expanded, setExpanded] = React.useState(false);
   const scoreColor = qr.score >= 70 ? '#22c55e' : qr.score >= 50 ? '#eab308' : '#ef4444';
+  const aiScoreColor = aiScore != null ? (aiScore >= 7 ? '#22c55e' : aiScore >= 5 ? '#eab308' : '#ef4444') : null;
 
   return (
     <motion.div
@@ -275,8 +276,11 @@ const QuestionCard: React.FC<{ qr: InterviewResults['questions'][0]; index: numb
           <div style={{ fontSize: 14, color: '#e8e8f0', fontWeight: 600, lineHeight: 1.4, marginBottom: 6 }}>
             {qr.question}
           </div>
-          <div style={{ display: 'flex', gap: 10 }}>
-            <span style={{ fontSize: 12, color: scoreColor, fontWeight: 700 }}>Score: {qr.score}/100</span>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 12, color: '#8888aa', fontWeight: 600 }}>🎥 Presence: <span style={{ color: scoreColor }}>{qr.score}/100</span></span>
+            {aiScore != null && aiScoreColor && (
+              <span style={{ fontSize: 12, color: '#8888aa', fontWeight: 600 }}>🧠 Answer: <span style={{ color: aiScoreColor }}>{aiScore}/10</span></span>
+            )}
             <span style={{ fontSize: 12, color: '#555577' }}>Eye: {Math.round(qr.eyeContact)}%</span>
             <span style={{ fontSize: 12, color: '#555577' }}>Conf: {Math.round(qr.confidence)}%</span>
           </div>
@@ -298,10 +302,10 @@ const QuestionCard: React.FC<{ qr: InterviewResults['questions'][0]; index: numb
               {qr.answer}
             </div>
           </div>
-          {qr.feedback && (
+          {(qr.feedback || aiFeedback) && (
             <div style={{ padding: '12px 14px', background: `${accentColor}12`, border: `1px solid ${accentColor}33`, borderRadius: 10, borderLeft: `3px solid ${accentColor}` }}>
               <div style={{ fontSize: 11, fontWeight: 600, color: accentColor, marginBottom: 6 }}>AI Feedback</div>
-              <div style={{ fontSize: 13, color: '#c8c8e0', lineHeight: 1.6 }}>{qr.feedback}</div>
+              <div style={{ fontSize: 13, color: '#c8c8e0', lineHeight: 1.6 }}>{aiFeedback || qr.feedback}</div>
             </div>
           )}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
@@ -666,9 +670,15 @@ const ResultsDashboard: React.FC = () => {
           >
             <SectionHeader title="Question Breakdown" />
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {results.questions.map((qr, i) => (
-                <QuestionCard key={i} qr={qr} index={i} accentColor={companyConfig.accentColor} />
-              ))}
+              {results.questions.map((qr, i) => {
+                const pq = results.answer_quality?.per_question?.[i];
+                return (
+                <QuestionCard key={i} qr={qr} index={i} accentColor={companyConfig.accentColor}
+                  aiScore={pq?.score}
+                  aiFeedback={pq?.feedback}
+                />
+                );
+              })}
             </div>
           </motion.div>
         )}
