@@ -3,11 +3,15 @@
  * Records a MediaStream (webcam) to a WebM Blob.
  */
 
+// Audio codec (opus) must be included alongside video codec when the stream
+// has audio tracks — otherwise some browsers error silently mid-recording.
 const MIME_TYPES = [
-  "video/webm;codecs=vp9",
+  "video/webm;codecs=vp9,opus",
+  "video/webm;codecs=vp8,opus",
   "video/webm;codecs=vp8",
   "video/webm",
-] as const;
+  "video/mp4",
+];
 
 function selectMimeType(): string {
   for (const mime of MIME_TYPES) {
@@ -40,6 +44,9 @@ export function createVideoRecorder(
       recorder = new MediaRecorder(stream, options);
       recorder.ondataavailable = (event) => {
         if (event.data.size > 0) chunks.push(event.data);
+      };
+      recorder.onerror = (event) => {
+        console.error("[VideoRecorder] MediaRecorder error:", event);
       };
       recorder.start(timeslice);
     },
