@@ -13,7 +13,8 @@ const MOCK_RESULTS: InterviewResults = {
   presenceScore: 76,
   interviewScore: 72,
   eyeContactAvg: 78,
-  stressAvg: 32,
+  volumeAvg: 62,
+  stressAvg: 32,  // kept for compat
   confidenceAvg: 71,
   strengths: [
     'Clear and well-structured responses using STAR format',
@@ -327,6 +328,106 @@ const SectionHeader: React.FC<{ title: string }> = ({ title }) => (
   </h2>
 );
 
+// ─── SessionRecording ─────────────────────────────────────────────────────────
+
+const SessionRecording: React.FC<{
+  videoUrl: string;
+  timestamps: Array<{ time: number; label: string; feedback?: string }>;
+  accentColor: string;
+}> = ({ videoUrl, timestamps, accentColor }) => {
+  const videoRef = React.useRef<HTMLVideoElement>(null);
+  const [currentTime, setCurrentTime] = React.useState(0);
+  const [duration, setDuration] = React.useState(0);
+  const [hoveredTip, setHoveredTip] = React.useState<number | null>(null);
+
+  const seekTo = (t: number) => {
+    if (videoRef.current) { videoRef.current.currentTime = t; videoRef.current.play(); }
+  };
+
+  const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.12 }}
+      style={{ background: '#16161e', border: '1px solid #2a2a3e', borderRadius: 20, padding: '28px 32px', marginBottom: 24 }}
+    >
+      <SectionHeader title="🎬 Session Recording" />
+      <video
+        ref={videoRef}
+        src={videoUrl}
+        controls
+        onTimeUpdate={() => setCurrentTime(videoRef.current?.currentTime ?? 0)}
+        onLoadedMetadata={() => setDuration(videoRef.current?.duration ?? 0)}
+        style={{ width: '100%', borderRadius: 12, background: '#0f0f13', maxHeight: 400, marginBottom: 16 }}
+      />
+
+      {/* Timeline with AI tip markers */}
+      {timestamps.length > 0 && duration > 0 && (
+        <div style={{ position: 'relative', marginTop: 8 }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: '#8888aa', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>
+            Question Timeline
+          </div>
+          {/* Track */}
+          <div style={{ position: 'relative', height: 4, background: '#2a2a3e', borderRadius: 2, marginBottom: 28 }}>
+            {/* Progress */}
+            <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: `${(currentTime / duration) * 100}%`, background: accentColor, borderRadius: 2, transition: 'width 0.1s' }} />
+            {/* Markers */}
+            {timestamps.map((ts, i) => {
+              const pct = (ts.time / duration) * 100;
+              return (
+                <div key={i} style={{ position: 'absolute', top: -6, left: `${pct}%`, transform: 'translateX(-50%)' }}>
+                  <button
+                    onClick={() => seekTo(ts.time)}
+                    onMouseEnter={() => setHoveredTip(i)}
+                    onMouseLeave={() => setHoveredTip(null)}
+                    style={{
+                      width: 16, height: 16, borderRadius: '50%',
+                      background: accentColor, border: `2px solid #0f0f13`,
+                      cursor: 'pointer', position: 'relative',
+                    }}
+                    title={ts.label}
+                  />
+                  {hoveredTip === i && (
+                    <div style={{
+                      position: 'absolute', bottom: 22, left: '50%', transform: 'translateX(-50%)',
+                      background: '#1c1c28', border: `1px solid ${accentColor}44`,
+                      borderRadius: 8, padding: '8px 12px', width: 220, zIndex: 10,
+                      fontSize: 11, color: '#c8c8e0', lineHeight: 1.5, pointerEvents: 'none',
+                    }}>
+                      <div style={{ fontWeight: 700, color: accentColor, marginBottom: 4 }}>{fmt(ts.time)}</div>
+                      <div>{ts.label}</div>
+                      {ts.feedback && <div style={{ marginTop: 4, color: '#8888aa', fontStyle: 'italic' }}>{ts.feedback}</div>}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Chip list */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {timestamps.map((ts, i) => (
+              <button
+                key={i}
+                onClick={() => seekTo(ts.time)}
+                style={{
+                  padding: '4px 10px', borderRadius: 20,
+                  background: `${accentColor}18`, border: `1px solid ${accentColor}44`,
+                  color: accentColor, fontSize: 11, fontWeight: 600, cursor: 'pointer',
+                }}
+              >
+                {fmt(ts.time)} — Q{i + 1}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </motion.div>
+  );
+};
+
 // ─── ResultsDashboard ─────────────────────────────────────────────────────────
 
 const ResultsDashboard: React.FC = () => {
@@ -405,7 +506,7 @@ const ResultsDashboard: React.FC = () => {
                 </div>
                 <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 10 }}>
                   <MetricGauge label="Eye Contact" value={results.eyeContactAvg} type="bar" />
-                  <MetricGauge label="Calmness" value={100 - results.stressAvg} type="bar" />
+                  <MetricGauge label="Vocal Volume" value={results.volumeAvg ?? results.stressAvg ?? 50} type="bar" />
                   <MetricGauge label="Confidence" value={results.confidenceAvg} type="bar" />
                 </div>
               </div>
@@ -442,6 +543,15 @@ const ResultsDashboard: React.FC = () => {
             );
           })()}
         </motion.div>
+
+        {/* ── Session Recording ── */}
+        {results.videoUrl && (
+          <SessionRecording
+            videoUrl={results.videoUrl}
+            timestamps={results.videoTimestamps || []}
+            accentColor={companyConfig.accentColor}
+          />
+        )}
 
         {/* ── AI Summary ── */}
         {results.summary && (

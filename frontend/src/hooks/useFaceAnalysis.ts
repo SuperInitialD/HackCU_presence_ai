@@ -10,11 +10,11 @@ import type { CVMetricsFrame } from '../types/interview';
 
 const FRAME_INTERVAL_MS = 100; // ~10 fps for responsive client-side analysis
 
-/** Convert CVMetricsFrame (0-1) to FaceMetrics (0-100). Stress = inverse of confidence. */
-function cvToFaceMetrics(cv: CVMetricsFrame): FaceMetrics {
+/** Convert CVMetricsFrame (0-1) to FaceMetrics (0-100). Volume is injected externally via ref. */
+function cvToFaceMetrics(cv: CVMetricsFrame, volume: number): FaceMetrics {
   return {
     eyeContact: Math.round(cv.eyeContact * 100),
-    stress: Math.round((1 - cv.confidence) * 100),
+    volume,
     confidence: Math.round(cv.confidence * 100),
   };
 }
@@ -26,11 +26,14 @@ export function useFaceAnalysis(
 ) {
   const [metrics, setMetrics] = useState<FaceMetrics>({
     eyeContact: 75,
-    stress: 20,
+    volume: 50,
     confidence: 70,
   });
   const [isReady, setIsReady] = useState(false);
   const smoothedCvRef = useRef<CVMetricsFrame | undefined>(undefined);
+  const volumeRef = useRef<number>(50);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
   const frameIdRef = useRef<number | null>(null);
   const lastFrameTimeRef = useRef<number>(0);
   const faceLandmarkerRef = useRef<FaceLandmarker | null>(null);
@@ -160,7 +163,16 @@ export function useFaceAnalysis(
       const smoothed = smoothMetrics(smoothedCvRef.current, raw);
       smoothedCvRef.current = smoothed;
 
-      const faceMetrics = cvToFaceMetrics(smoothed);
+      // Sample mic RMS volume
+      if (analyserRef.current) {
+        const buf = new Uint8Array(analyserRef.current.frequencyBinCount);
+        analyserRef.current.getByteFrequencyData(buf);
+        const rms = Math.sqrt(buf.reduce((s, v) => s + v * v, 0) / buf.length);
+        // rms ~0-128; normalize to 0-100 with slight amplification
+        volumeRef.current = Math.min(100, Math.round((rms / 80) * 100));
+      }
+
+      const faceMetrics = cvToFaceMetrics(smoothed, volumeRef.current);
       setMetrics(faceMetrics);
 
       // Overlay indicator
@@ -184,6 +196,32 @@ export function useFaceAnalysis(
 
     frameIdRef.current = requestAnimationFrame(analyzeFrame);
   }, [enabled, videoRef, canvasRef]);
+
+  // Start mic volume analyser
+  useEffect(() => {
+    if (!enabled) return;
+    let stream: MediaStream | null = null;
+    (async () => {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        const ctx = new AudioContext();
+        audioCtxRef.current = ctx;
+        const src = ctx.createMediaStreamSource(stream);
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 256;
+        src.connect(analyser);
+        analyserRef.current = analyser;
+      } catch {
+        // mic unavailable — volume stays at default
+      }
+    })();
+    return () => {
+      analyserRef.current = null;
+      audioCtxRef.current?.close();
+      audioCtxRef.current = null;
+      stream?.getTracks().forEach(t => t.stop());
+    };
+  }, [enabled]);
 
   useEffect(() => {
     if (!enabled) return;
