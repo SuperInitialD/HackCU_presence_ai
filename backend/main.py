@@ -1,10 +1,19 @@
 import os
 import uuid
 import io
+from pathlib import Path
 from typing import Optional
 
 from dotenv import load_dotenv
-load_dotenv()
+
+# Load .env from project root; fallback to backend/ if running from elsewhere
+_env_root = Path(__file__).resolve().parent.parent / ".env"
+_env_local = Path(__file__).resolve().parent / ".env"
+if load_dotenv(_env_root) or load_dotenv(_env_local):
+    pass  # loaded
+elif not os.environ.get("ANTHROPIC_API_KEY"):
+    import sys
+    print("WARNING: No .env found and ANTHROPIC_API_KEY not set. Check that .env exists in project root.", file=sys.stderr)
 
 from fastapi import FastAPI, HTTPException, UploadFile, File, Query
 from fastapi.middleware.cors import CORSMiddleware
