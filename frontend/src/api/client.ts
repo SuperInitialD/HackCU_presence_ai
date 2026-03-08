@@ -63,9 +63,11 @@ export const fetchJD = async (url: string): Promise<FetchJDResponse> => {
 };
 
 export const startSession = async (payload: {
-  company: string;
+  company?: string;
   resume_text?: string;
   job_description?: string;
+  github_url?: string;
+  linkedin_url?: string;
 }): Promise<StartSessionResponse> => {
   const { data } = await api.post<StartSessionResponse>('/session/start', payload);
   // Normalize: backend may return opening_message instead of first_question
