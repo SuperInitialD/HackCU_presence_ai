@@ -1118,7 +1118,7 @@ const InterviewRoom: React.FC = () => {
           {/* End Early */}
           {!isComplete && messages.length > 2 && (
             <button
-              onClick={() => {
+              onClick={async () => {
                 const avgMetric = (key: keyof FaceMetrics) =>
                   metricsHistory.length > 0
                     ? metricsHistory.reduce((s, mm) => s + mm[key], 0) / metricsHistory.length
@@ -1127,26 +1127,58 @@ const InterviewRoom: React.FC = () => {
                 const str  = avgMetric('volume');
                 const conf = avgMetric('confidence');
                 const presenceScore  = Math.round((eyeC + str + conf) / 3);
-                const interviewScore = questionResults.length > 0
-                  ? Math.round(questionResults.reduce((s, r) => s + r.score, 0) / questionResults.length)
-                  : 72;
-                const results: InterviewResults = {
-                  sessionId,
-                  company: setup.company,
-                  overallScore: Math.round((presenceScore + interviewScore) / 2),
-                  presenceScore,
-                  interviewScore,
-                  eyeContactAvg: eyeC,
-                  volumeAvg: str,
-                  confidenceAvg: conf,
-                  strengths: [],
-                  improvements: [],
-                  questions: questionResults,
-                  duration: Math.round((Date.now() - new Date(messages[0].timestamp).getTime()) / 1000 / 60),
-                  resume_feedback: null,
-                  linkedin_feedback: null,
-                };
-                navigate('/results', { state: { results } });
+
+                // Stop recording first — before any async work — so we don't race with cleanup
+                let videoUrl: string | undefined;
+                const videoTimestamps = [...videoTimestampsRef.current];
+                if (videoRecorderRef.current?.isRecording()) {
+                  const blob = await videoRecorderRef.current.stop();
+                  videoRecorderRef.current = null;
+                  if (blob && blob.size > 0) videoUrl = URL.createObjectURL(blob);
+                }
+
+                // Try to get real AI evaluation even on early end
+                try {
+                  const evaluation = await endSession(sessionId);
+                  const aq = evaluation.answer_quality;
+                  const interviewScore = aq?.overall != null
+                    ? Math.round(aq.overall * 10)
+                    : questionResults.length > 0
+                    ? Math.round(questionResults.reduce((s, r) => s + r.score, 0) / questionResults.length)
+                    : 50;
+                  navigate('/results', { state: { results: {
+                    sessionId, company: setup.company,
+                    overallScore: Math.round((presenceScore + interviewScore) / 2),
+                    presenceScore, interviewScore,
+                    eyeContactAvg: eyeC, volumeAvg: str, confidenceAvg: conf,
+                    strengths: evaluation.strengths || [],
+                    improvements: evaluation.areas_for_improvement || [],
+                    questions: questionResults,
+                    duration: Math.round((Date.now() - new Date(messages[0].timestamp).getTime()) / 1000 / 60),
+                    hiring_recommendation: evaluation.hiring_recommendation,
+                    summary: evaluation.summary,
+                    answer_quality: evaluation.answer_quality,
+                    resume_feedback: evaluation.resume_feedback ?? null,
+                    linkedin_feedback: evaluation.linkedin_feedback ?? null,
+                    videoUrl,
+                    videoTimestamps,
+                  }}});
+                } catch {
+                  // Fallback without evaluation
+                  const interviewScore = questionResults.length > 0
+                    ? Math.round(questionResults.reduce((s, r) => s + r.score, 0) / questionResults.length)
+                    : 50;
+                  navigate('/results', { state: { results: {
+                    sessionId, company: setup.company,
+                    overallScore: Math.round((presenceScore + interviewScore) / 2),
+                    presenceScore, interviewScore,
+                    eyeContactAvg: eyeC, volumeAvg: str, confidenceAvg: conf,
+                    strengths: [], improvements: [], questions: questionResults,
+                    duration: Math.round((Date.now() - new Date(messages[0].timestamp).getTime()) / 1000 / 60),
+                    resume_feedback: null, linkedin_feedback: null,
+                    videoUrl, videoTimestamps,
+                  }}});
+                }
               }}
               style={{
                 background: 'none',

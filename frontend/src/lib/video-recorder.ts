@@ -47,16 +47,22 @@ export function createVideoRecorder(
     stop(): Promise<Blob | null> {
       return new Promise((resolve) => {
         if (!recorder || recorder.state === "inactive") {
-          resolve(null);
+          // Already stopped — return whatever chunks we have
+          const blob = chunks.length > 0
+            ? new Blob(chunks, { type: "video/webm" })
+            : null;
+          resolve(blob && blob.size > 0 ? blob : null);
           return;
         }
+        const mimeType = recorder.mimeType || "video/webm";
         recorder.onstop = () => {
-          const blob = new Blob(chunks, {
-            type: recorder!.mimeType || "video/webm",
-          });
+          const blob = new Blob(chunks, { type: mimeType });
           recorder = null;
-          resolve(blob);
+          resolve(blob.size > 0 ? blob : null);
         };
+        // requestData() flushes the current in-progress timeslice chunk
+        // before stop() so the last few seconds aren't lost
+        try { recorder.requestData(); } catch {}
         recorder.stop();
       });
     },
