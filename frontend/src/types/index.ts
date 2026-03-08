@@ -1,7 +1,7 @@
-export type Company = 'google' | 'amazon' | 'meta' | 'microsoft' | 'generic';
+export type Company = string;
 
 export interface CompanyConfig {
-  id: Company;
+  id: string;
   name: string;
   interviewer: string;
   accentColor: string;
@@ -12,7 +12,7 @@ export interface CompanyConfig {
 }
 
 export interface InterviewSetup {
-  company: Company;
+  company?: string;
   resumeText?: string;
   jobDescription?: string;
   sessionId?: string;
@@ -44,7 +44,7 @@ export interface QuestionResult {
 
 export interface InterviewResults {
   sessionId: string;
-  company: Company;
+  company?: string;
   overallScore: number;
   eyeContactAvg: number;
   stressAvg: number;
