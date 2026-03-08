@@ -1,8 +1,14 @@
 import os
 import json
 import re
+from pathlib import Path
 import anthropic
+from dotenv import load_dotenv
 from company_presets import COMPANY_PRESETS
+
+# Belt-and-suspenders: load .env even if imported before main.py runs
+load_dotenv(Path(__file__).resolve().parent / ".env", override=False)
+load_dotenv(Path(__file__).resolve().parent.parent / ".env", override=False)
 
 _client = None
 
@@ -10,7 +16,13 @@ _client = None
 def _get_client() -> anthropic.Anthropic:
     global _client
     if _client is None:
-        _client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+        api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+        if not api_key:
+            raise RuntimeError(
+                "ANTHROPIC_API_KEY is not set. "
+                "Add it to backend/.env: ANTHROPIC_API_KEY=sk-ant-..."
+            )
+        _client = anthropic.Anthropic(api_key=api_key)
     return _client
 
 
