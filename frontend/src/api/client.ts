@@ -33,10 +33,18 @@ export interface RespondResponse {
   is_complete: boolean;
   score?: number;
   checklist?: {
-    resume: boolean;
-    profile: boolean;
-    technical: boolean;
-    behavioral: boolean;
+    behavioral: {
+      introduction: boolean;
+      experience: boolean;
+      star_scenario: boolean;
+      skills_strengths: boolean;
+    };
+    technical: {
+      concepts: boolean;
+      problem_solving: boolean;
+      project_dive: boolean;
+      role_specific: boolean;
+    };
   };
   results?: {
     overall_score: number;

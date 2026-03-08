@@ -44,7 +44,10 @@ const InterviewRoom: React.FC = () => {
   const [currentTip, setCurrentTip] = useState('');
   const [isComplete, setIsComplete] = useState(false);
   const [questionCount, setQuestionCount] = useState(0);
-  const [checklist, setChecklist] = useState({ resume: false, profile: false, technical: false, behavioral: false });
+  const [checklist, setChecklist] = useState({
+    behavioral: { introduction: false, experience: false, star_scenario: false, skills_strengths: false },
+    technical: { concepts: false, problem_solving: false, project_dive: false, role_specific: false },
+  });
   const [metricsHistory, setMetricsHistory] = useState<FaceMetrics[]>([]);
   const [questionResults, setQuestionResults] = useState<QuestionResult[]>([]);
 
@@ -250,10 +253,18 @@ const InterviewRoom: React.FC = () => {
       if (response.checklist) {
         const cl = response.checklist;
         setChecklist(prev => ({
-          resume: prev.resume || !!cl.resume,
-          profile: prev.profile || !!cl.profile,
-          technical: prev.technical || !!cl.technical,
-          behavioral: prev.behavioral || !!cl.behavioral,
+          behavioral: {
+            introduction:     prev.behavioral.introduction     || !!cl.behavioral?.introduction,
+            experience:       prev.behavioral.experience       || !!cl.behavioral?.experience,
+            star_scenario:    prev.behavioral.star_scenario    || !!cl.behavioral?.star_scenario,
+            skills_strengths: prev.behavioral.skills_strengths || !!cl.behavioral?.skills_strengths,
+          },
+          technical: {
+            concepts:        prev.technical.concepts        || !!cl.technical?.concepts,
+            problem_solving: prev.technical.problem_solving || !!cl.technical?.problem_solving,
+            project_dive:    prev.technical.project_dive    || !!cl.technical?.project_dive,
+            role_specific:   prev.technical.role_specific   || !!cl.technical?.role_specific,
+          },
         }));
       }
 
@@ -924,34 +935,67 @@ const InterviewRoom: React.FC = () => {
             <div style={{ fontSize: 11, fontWeight: 600, color: '#555577', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>
               Coverage
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {([
-                { key: 'resume', label: 'Background & Resume' },
-                { key: 'profile', label: 'GitHub / LinkedIn' },
-                { key: 'technical', label: 'Technical Challenge' },
-                { key: 'behavioral', label: 'Behavioral Scenario' },
-              ] as const).map(({ key, label }) => {
-                const done = checklist[key];
-                return (
-                  <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <div style={{
-                      width: 18, height: 18, borderRadius: 4, flexShrink: 0,
-                      background: done ? companyConfig.accentColor : '#2a2a3e',
-                      border: `1.5px solid ${done ? companyConfig.accentColor : '#3a3a55'}`,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      transition: 'all 0.3s ease',
-                    }}>
-                      {done && <span style={{ color: '#fff', fontSize: 11, fontWeight: 700 }}>✓</span>}
-                    </div>
-                    <span style={{ fontSize: 13, color: done ? '#e8e8f0' : '#555577', transition: 'color 0.3s ease' }}>
-                      {label}
-                    </span>
+            {([
+              {
+                section: 'behavioral' as const,
+                label: 'Behavioral',
+                items: [
+                  { key: 'introduction' as const, label: 'Background & Intro' },
+                  { key: 'experience' as const, label: 'Professional Experience' },
+                  { key: 'star_scenario' as const, label: 'STAR Scenario' },
+                  { key: 'skills_strengths' as const, label: 'Skills & Strengths' },
+                ],
+              },
+              {
+                section: 'technical' as const,
+                label: 'Technical',
+                items: [
+                  { key: 'concepts' as const, label: 'Technical Concepts' },
+                  { key: 'problem_solving' as const, label: 'Problem-Solving' },
+                  { key: 'project_dive' as const, label: 'Project Deep-Dive' },
+                  { key: 'role_specific' as const, label: 'Role-Specific Knowledge' },
+                ],
+              },
+            ]).map(({ section, label, items }) => {
+              const sectionMap = checklist[section] as Record<string, boolean>;
+              const sectionDone = items.every(i => sectionMap[i.key]);
+              return (
+                <div key={section} style={{ marginBottom: 16 }}>
+                  <div style={{
+                    fontSize: 11, fontWeight: 700, letterSpacing: '0.06em',
+                    color: sectionDone ? companyConfig.accentColor : '#8888aa',
+                    textTransform: 'uppercase', marginBottom: 8,
+                    display: 'flex', alignItems: 'center', gap: 6,
+                  }}>
+                    {sectionDone && <span>✓</span>}
+                    {label}
                   </div>
-                );
-              })}
-            </div>
-            <div style={{ fontSize: 11, color: '#555577', marginTop: 10 }}>
-              AI ends the interview when all areas are covered.
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingLeft: 4 }}>
+                    {items.map(({ key, label: itemLabel }) => {
+                      const done = sectionMap[key];
+                      return (
+                        <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <div style={{
+                            width: 14, height: 14, borderRadius: 3, flexShrink: 0,
+                            background: done ? companyConfig.accentColor : 'transparent',
+                            border: `1.5px solid ${done ? companyConfig.accentColor : '#3a3a55'}`,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            transition: 'all 0.3s ease',
+                          }}>
+                            {done && <span style={{ color: '#fff', fontSize: 9, fontWeight: 800, lineHeight: 1 }}>✓</span>}
+                          </div>
+                          <span style={{ fontSize: 12, color: done ? '#c8c8e0' : '#555577', transition: 'color 0.3s ease' }}>
+                            {itemLabel}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+            <div style={{ fontSize: 11, color: '#555577', marginTop: 4 }}>
+              AI moves to the next section when it has genuine signal.
             </div>
           </div>
 
