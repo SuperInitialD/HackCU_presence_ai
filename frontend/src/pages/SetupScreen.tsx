@@ -1,14 +1,16 @@
 import React, { useState, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Upload, Link, FileText, ChevronRight, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
-import { COMPANIES } from '../components/CompanyConfig';
+import { Upload, Link, FileText, ChevronRight, CheckCircle, AlertCircle, Loader2, Briefcase } from 'lucide-react';
+import { getCompany } from '../components/CompanyConfig';
 import { parseResume, fetchJD, startSession } from '../api/client';
-import type { Company, InterviewSetup } from '../types';
+import type { InterviewSetup } from '../types';
+
+const defaultConfig = getCompany();
 
 const SetupScreen: React.FC = () => {
   const navigate = useNavigate();
-  const [selectedCompany, setSelectedCompany] = useState<Company>('generic');
+  const [companyFreeText, setCompanyFreeText] = useState('');
   const [resumeFile, setResumeFile] = useState<File | null>(null);
   const [resumeText, setResumeText] = useState('');
   const [jdMode, setJdMode] = useState<'url' | 'text'>('text');
@@ -22,7 +24,7 @@ const SetupScreen: React.FC = () => {
   const [jdError, setJdError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const selectedConfig = COMPANIES.find(c => c.id === selectedCompany)!;
+  const accentColor = defaultConfig.accentColor;
 
   const handleFileDrop = useCallback(async (file: File) => {
     if (!file.name.endsWith('.pdf') && !file.name.endsWith('.txt') && !file.name.endsWith('.docx')) {
@@ -36,7 +38,6 @@ const SetupScreen: React.FC = () => {
       const result = await parseResume(file);
       setResumeText(result.text);
     } catch {
-      // Fallback: read as text if API fails
       const reader = new FileReader();
       reader.onload = (e) => setResumeText(e.target?.result as string || '');
       reader.readAsText(file);
@@ -71,13 +72,13 @@ const SetupScreen: React.FC = () => {
     setIsStarting(true);
     try {
       const session = await startSession({
-        company: selectedCompany,
+        company: companyFreeText.trim() || undefined,
         resume_text: resumeText || undefined,
         job_description: jdText || undefined,
       });
 
       const setup: InterviewSetup = {
-        company: selectedCompany,
+        company: companyFreeText.trim() || undefined,
         resumeText,
         jobDescription: jdText,
         sessionId: session.session_id,
@@ -88,12 +89,12 @@ const SetupScreen: React.FC = () => {
           setup,
           firstQuestion: session.first_question,
           sessionId: session.session_id,
+          interviewerName: session.interviewer_name,
         },
       });
     } catch {
-      // Fallback for demo: create a local session
       const setup: InterviewSetup = {
-        company: selectedCompany,
+        company: companyFreeText.trim() || undefined,
         resumeText,
         jobDescription: jdText,
         sessionId: `demo-${Date.now()}`,
@@ -101,8 +102,9 @@ const SetupScreen: React.FC = () => {
       navigate('/interview', {
         state: {
           setup,
-          firstQuestion: `Tell me about yourself and why you're interested in this ${selectedConfig.name} role.`,
+          firstQuestion: `Tell me about yourself${companyFreeText.trim() ? ` and why you're interested in this ${companyFreeText.trim()} role` : ''}.`,
           sessionId: setup.sessionId,
+          interviewerName: 'AI Interviewer',
         },
       });
     } finally {
@@ -151,78 +153,45 @@ const SetupScreen: React.FC = () => {
       </motion.div>
 
       <div style={{ width: '100%', maxWidth: 860, display: 'flex', flexDirection: 'column', gap: 28 }}>
-        {/* Company Picker */}
+
+        {/* Target Company / Role */}
         <motion.section
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1, duration: 0.5 }}
         >
           <h2 style={{ fontSize: 14, fontWeight: 600, color: '#8888aa', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>
-            01 — Choose Company
+            01 — Target Company / Role <span style={{ color: '#555577', fontWeight: 400 }}>(optional)</span>
           </h2>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12 }}>
-            {COMPANIES.map(company => {
-              const isSelected = selectedCompany === company.id;
-              return (
-                <motion.button
-                  key={company.id}
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={() => setSelectedCompany(company.id)}
-                  style={{
-                    background: isSelected ? `${company.accentColor}18` : '#16161e',
-                    border: `2px solid ${isSelected ? company.accentColor : '#2a2a3e'}`,
-                    borderRadius: 14,
-                    padding: '18px 12px',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    gap: 10,
-                    transition: 'all 0.2s ease',
-                    boxShadow: isSelected ? `0 0 20px ${company.accentColor}22` : 'none',
-                  }}
-                >
-                  <div style={{
-                    width: 42, height: 42,
-                    borderRadius: 10,
-                    background: isSelected ? company.accentColor : '#2a2a3e',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: 18, fontWeight: 900, color: '#fff',
-                    transition: 'all 0.2s ease',
-                  }}>
-                    {company.icon}
-                  </div>
-                  <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: isSelected ? company.accentColor : '#e8e8f0', marginBottom: 4 }}>
-                      {company.name}
-                    </div>
-                    <div style={{ fontSize: 10, color: '#555577', lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                      {company.description}
-                    </div>
-                  </div>
-                </motion.button>
-              );
-            })}
-          </div>
-          {selectedCompany && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
+          <div style={{
+            background: '#16161e',
+            border: '1px solid #2a2a3e',
+            borderRadius: 14,
+            padding: '16px 20px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+          }}>
+            <Briefcase size={18} color="#555577" style={{ flexShrink: 0 }} />
+            <input
+              type="text"
+              value={companyFreeText}
+              onChange={e => setCompanyFreeText(e.target.value)}
+              placeholder='e.g. "Google SWE", "Amazon PM", "Startup engineer"'
               style={{
-                marginTop: 12,
-                padding: '12px 16px',
-                background: `${selectedConfig.accentColor}12`,
-                border: `1px solid ${selectedConfig.accentColor}33`,
-                borderRadius: 10,
-                fontSize: 13,
-                color: '#8888aa',
+                flex: 1,
+                background: 'transparent',
+                border: 'none',
+                outline: 'none',
+                color: '#e8e8f0',
+                fontSize: 15,
+                fontFamily: 'inherit',
               }}
-            >
-              <span style={{ color: selectedConfig.accentColor, fontWeight: 600 }}>{selectedConfig.interviewer}</span>
-              {' '}will be interviewing you. Style: {selectedConfig.style}.
-            </motion.div>
-          )}
+            />
+          </div>
+          <div style={{ marginTop: 8, fontSize: 12, color: '#555577' }}>
+            Leave blank for a general interview. The AI will tailor questions to your target role.
+          </div>
         </motion.section>
 
         {/* Resume Upload */}
@@ -240,12 +209,12 @@ const SetupScreen: React.FC = () => {
             onDrop={handleDrop}
             onClick={() => fileInputRef.current?.click()}
             style={{
-              border: `2px dashed ${isDragging ? selectedConfig.accentColor : resumeFile ? '#22c55e44' : '#2a2a3e'}`,
+              border: `2px dashed ${isDragging ? accentColor : resumeFile ? '#22c55e44' : '#2a2a3e'}`,
               borderRadius: 14,
               padding: '32px',
               textAlign: 'center',
               cursor: 'pointer',
-              background: isDragging ? `${selectedConfig.accentColor}08` : resumeFile ? '#22c55e08' : '#16161e',
+              background: isDragging ? `${accentColor}08` : resumeFile ? '#22c55e08' : '#16161e',
               transition: 'all 0.2s ease',
             }}
           >
@@ -271,7 +240,7 @@ const SetupScreen: React.FC = () => {
               <>
                 <Upload size={28} color="#555577" style={{ marginBottom: 12 }} />
                 <div style={{ color: '#8888aa', fontSize: 14, marginBottom: 4 }}>
-                  Drop your resume here or <span style={{ color: selectedConfig.accentColor }}>browse</span>
+                  Drop your resume here or <span style={{ color: accentColor }}>browse</span>
                 </div>
                 <div style={{ color: '#555577', fontSize: 12 }}>PDF, TXT, or DOCX</div>
               </>
@@ -311,9 +280,9 @@ const SetupScreen: React.FC = () => {
                     padding: '12px',
                     background: 'none',
                     border: 'none',
-                    borderBottom: jdMode === mode ? `2px solid ${selectedConfig.accentColor}` : '2px solid transparent',
+                    borderBottom: jdMode === mode ? `2px solid ${accentColor}` : '2px solid transparent',
                     cursor: 'pointer',
-                    color: jdMode === mode ? selectedConfig.accentColor : '#8888aa',
+                    color: jdMode === mode ? accentColor : '#8888aa',
                     fontSize: 13,
                     fontWeight: 600,
                     display: 'flex',
@@ -342,7 +311,7 @@ const SetupScreen: React.FC = () => {
                       type="url"
                       value={jdUrl}
                       onChange={e => setJdUrl(e.target.value)}
-                      placeholder="https://jobs.google.com/..."
+                      placeholder="https://jobs.example.com/..."
                       onKeyDown={(e) => e.key === 'Enter' && handleFetchJD()}
                       style={{
                         flex: 1,
@@ -359,7 +328,7 @@ const SetupScreen: React.FC = () => {
                       onClick={handleFetchJD}
                       disabled={isFetchingJD || !jdUrl.trim()}
                       style={{
-                        background: selectedConfig.accentColor,
+                        background: accentColor,
                         border: 'none',
                         borderRadius: 8,
                         padding: '10px 18px',
@@ -431,7 +400,7 @@ const SetupScreen: React.FC = () => {
             onClick={handleStart}
             disabled={isStarting}
             style={{
-              background: `linear-gradient(135deg, ${selectedConfig.accentColor}, ${selectedConfig.secondaryColor})`,
+              background: `linear-gradient(135deg, ${defaultConfig.accentColor}, ${defaultConfig.secondaryColor})`,
               border: 'none',
               borderRadius: 14,
               padding: '16px 36px',
@@ -443,7 +412,7 @@ const SetupScreen: React.FC = () => {
               display: 'flex',
               alignItems: 'center',
               gap: 10,
-              boxShadow: `0 8px 24px ${selectedConfig.accentColor}44`,
+              boxShadow: `0 8px 24px ${defaultConfig.accentColor}44`,
               letterSpacing: '-0.01em',
             }}
           >
