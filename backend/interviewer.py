@@ -19,15 +19,35 @@ def _get_preset(company: str) -> dict:
     return COMPANY_PRESETS.get(key, COMPANY_PRESETS["generic"])
 
 
-def _default_checklist(interview_type: str = "behavioral") -> dict:
-    behavioral = {"introduction": False, "experience": False, "star_scenario": False, "skills_strengths": False}
-    technical  = {"concepts": False, "problem_solving": False, "project_dive": False, "role_specific": False}
+ALL_BEHAVIORAL = ["introduction", "experience", "star_scenario", "skills_strengths"]
+ALL_TECHNICAL  = ["concepts", "problem_solving", "project_dive", "role_specific"]
+
+def _default_checklist(interview_type: str = "behavioral", selected_sections: list | None = None) -> dict:
+    behavioral_keys = ALL_BEHAVIORAL
+    technical_keys  = ALL_TECHNICAL
+
+    # Determine which top-level sections are in scope for this interview type
     if interview_type == "technical_verbal":
-        return {"behavioral": {k: True for k in behavioral}, "technical": technical}
-    if interview_type == "behavioral":
-        return {"behavioral": behavioral, "technical": {k: True for k in technical}}
-    # full — both active
-    return {"behavioral": behavioral, "technical": technical}
+        in_scope = set(technical_keys)
+    elif interview_type == "behavioral":
+        in_scope = set(behavioral_keys)
+    else:  # full
+        in_scope = set(behavioral_keys + technical_keys)
+
+    # If caller specified a subset, restrict further
+    if selected_sections is not None:
+        selected = set(selected_sections)
+    else:
+        selected = in_scope  # default: all in-scope items selected
+
+    def val(k: str) -> bool:
+        # True = already done/skip; False = needs to be covered
+        return not (k in in_scope and k in selected)
+
+    return {
+        "behavioral": {k: val(k) for k in behavioral_keys},
+        "technical":  {k: val(k) for k in technical_keys},
+    }
 
 
 def _build_system_prompt(
@@ -37,6 +57,7 @@ def _build_system_prompt(
     github_url: str = "",
     linkedin_url: str = "",
     interview_type: str = "behavioral",
+    selected_sections: list | None = None,
 ) -> str:
     preset_key = company.lower().strip()
     known = preset_key in COMPANY_PRESETS
@@ -59,18 +80,53 @@ def _build_system_prompt(
     resume_display  = resume_text.strip() if resume_text.strip() else "No resume provided — ask the candidate to walk you through their background."
     jd_display      = jd.strip() if jd.strip() else "No job description provided — conduct a general software engineering interview."
 
-    if interview_type == "behavioral":
-        mode_instruction = "BEHAVIORAL-ONLY: Cover only the 4 behavioral sections. Mark all technical checklist items true immediately."
-        behavioral_label = "(Complete in order)"
-        technical_label  = "(SKIP — mark all true immediately)"
-    elif interview_type == "technical_verbal":
-        mode_instruction = "TECHNICAL VERBAL: Skip behavioral (mark all true immediately). Focus entirely on the 4 technical sections. No coding."
-        behavioral_label = "(SKIP — mark all true immediately)"
-        technical_label  = "(Complete in order — no coding)"
+    # Determine which sections are actually active (selected by user)
+    if selected_sections is not None:
+        selected_set = set(selected_sections)
     else:
-        mode_instruction = "FULL INTERVIEW: Complete all 8 sections in order — all 4 behavioral first, then all 4 technical."
-        behavioral_label = "(Complete in order)"
-        technical_label  = "(Complete in order — no coding)"
+        if interview_type == "technical_verbal":
+            selected_set = set(ALL_TECHNICAL)
+        elif interview_type == "behavioral":
+            selected_set = set(ALL_BEHAVIORAL)
+        else:
+            selected_set = set(ALL_BEHAVIORAL + ALL_TECHNICAL)
+
+    active_behavioral = [k for k in ALL_BEHAVIORAL if k in selected_set]
+    active_technical  = [k for k in ALL_TECHNICAL  if k in selected_set]
+
+    if interview_type == "behavioral":
+        mode_instruction = "BEHAVIORAL-ONLY: Cover only the selected behavioral sections. Mark all technical checklist items true immediately."
+        technical_label  = "(SKIP — mark all true immediately)"
+        behavioral_label = "(Complete in order)" if active_behavioral else "(ALL SKIPPED — mark all true)"
+    elif interview_type == "technical_verbal":
+        mode_instruction = "TECHNICAL VERBAL: Skip behavioral (mark all true immediately). Focus only on the selected technical sections. No coding."
+        behavioral_label = "(SKIP — mark all true immediately)"
+        technical_label  = "(Complete in order — no coding)" if active_technical else "(ALL SKIPPED — mark all true)"
+    else:
+        mode_instruction = "FULL INTERVIEW: Complete selected sections in order — behavioral first, then technical."
+        behavioral_label = "(Complete in order)" if active_behavioral else "(ALL SKIPPED — mark all true)"
+        technical_label  = "(Complete in order — no coding)" if active_technical else "(ALL SKIPPED — mark all true)"
+
+    # Human-readable section names for the prompt
+    SECTION_NAMES = {
+        "introduction":     "Introduction / Background",
+        "experience":       "Professional Experience",
+        "star_scenario":    "STAR Scenario",
+        "skills_strengths": "Skills & Strengths",
+        "concepts":         "Technical Concepts",
+        "problem_solving":  "Problem Solving",
+        "project_dive":     "Project Deep-Dive",
+        "role_specific":    "Role-Specific Knowledge",
+    }
+    active_b_names = [SECTION_NAMES[k] for k in active_behavioral]
+    active_t_names = [SECTION_NAMES[k] for k in active_technical]
+    focus_note = ""
+    if selected_sections is not None:
+        skipped_b = [SECTION_NAMES[k] for k in ALL_BEHAVIORAL if k not in selected_set]
+        skipped_t = [SECTION_NAMES[k] for k in ALL_TECHNICAL  if k not in selected_set]
+        skipped = skipped_b + skipped_t
+        if skipped:
+            focus_note = "The candidate chose to SKIP these sections — mark them true immediately and do NOT ask about them: " + ", ".join(skipped) + "."
 
     system = f"""You are conducting a structured mock interview for {company_name}.
 {company_context}
@@ -92,6 +148,7 @@ def _build_system_prompt(
 ## Interview Structure
 
 {mode_instruction}
+{focus_note}
 
 ### Behavioral Sections {behavioral_label}
 1. **introduction** — Background & Introduction: career story, how they got here, what drives them.
@@ -195,10 +252,11 @@ class AIInterviewer:
         github_url: str = "",
         linkedin_url: str = "",
         interview_type: str = "behavioral",
+        selected_sections: list | None = None,
     ) -> str:
-        system_prompt = _build_system_prompt(company, jd, resume_text, github_url, linkedin_url, interview_type)
+        system_prompt = _build_system_prompt(company, jd, resume_text, github_url, linkedin_url, interview_type, selected_sections)
         self._system_prompts[session_id] = system_prompt
-        self._checklists[session_id] = _default_checklist(interview_type)
+        self._checklists[session_id] = _default_checklist(interview_type, selected_sections)
 
         preset = _get_preset(company)
         has_resume = bool(resume_text.strip())

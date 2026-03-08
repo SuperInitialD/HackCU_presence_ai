@@ -29,6 +29,38 @@ const SetupScreen: React.FC = () => {
   const [interviewMode, setInterviewMode] = useState<'behavioral' | 'technical' | 'full'>('behavioral');
   const [technicalSubMode, setTechnicalSubMode] = useState<'verbal' | 'coding'>('verbal');
 
+  const BEHAVIORAL_SECTIONS = [
+    { id: 'introduction',     label: 'Introduction',         desc: 'Tell me about yourself' },
+    { id: 'experience',       label: 'Experience',           desc: 'Past roles & impact' },
+    { id: 'star_scenario',    label: 'STAR Scenario',        desc: 'Challenge / conflict / failure' },
+    { id: 'skills_strengths', label: 'Skills & Strengths',   desc: 'What you bring' },
+  ] as const;
+
+  const TECHNICAL_SECTIONS = [
+    { id: 'concepts',        label: 'Technical Concepts',   desc: 'CS fundamentals & system design' },
+    { id: 'problem_solving', label: 'Problem Solving',      desc: 'Breaking down scenarios' },
+    { id: 'project_dive',    label: 'Project Deep-Dive',    desc: 'Your past technical work' },
+    { id: 'role_specific',   label: 'Role-Specific',        desc: 'JD-tailored questions' },
+  ] as const;
+
+  const [selectedSections, setSelectedSections] = useState<Set<string>>(
+    () => new Set([...BEHAVIORAL_SECTIONS.map(s => s.id), ...TECHNICAL_SECTIONS.map(s => s.id)])
+  );
+
+  const toggleSection = (id: string) => {
+    setSelectedSections(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) { next.delete(id); } else { next.add(id); }
+      return next;
+    });
+  };
+
+  const visibleSections = interviewMode === 'behavioral'
+    ? BEHAVIORAL_SECTIONS
+    : interviewMode === 'technical'
+    ? TECHNICAL_SECTIONS
+    : [...BEHAVIORAL_SECTIONS, ...TECHNICAL_SECTIONS];
+
   const accentColor = defaultConfig.accentColor;
 
   const handleFileDrop = useCallback(async (file: File) => {
@@ -92,6 +124,7 @@ const SetupScreen: React.FC = () => {
         github_url: githubUrl.trim() || undefined,
         linkedin_url: linkedinUrl.trim() || undefined,
         interview_type: interviewType,
+        selected_sections: Array.from(selectedSections),
       });
 
       const setup: InterviewSetup = {
@@ -299,6 +332,45 @@ const SetupScreen: React.FC = () => {
               </motion.div>
             )}
           </AnimatePresence>
+
+          {/* Focus Area Chips */}
+          <div style={{ marginTop: 16 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: '#8888aa', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>
+              Focus Areas — select what to cover
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {(visibleSections as ReadonlyArray<{ id: string; label: string; desc: string }>).map(s => {
+                const active = selectedSections.has(s.id);
+                return (
+                  <button
+                    key={s.id}
+                    onClick={() => toggleSection(s.id)}
+                    title={s.desc}
+                    style={{
+                      padding: '7px 14px',
+                      borderRadius: 99,
+                      border: `1.5px solid ${active ? accentColor : '#2a2a3e'}`,
+                      background: active ? `${accentColor}18` : '#16161e',
+                      color: active ? accentColor : '#555577',
+                      fontSize: 12,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                      outline: 'none',
+                      letterSpacing: '0.01em',
+                    }}
+                  >
+                    {active ? '✓ ' : ''}{s.label}
+                  </button>
+                );
+              })}
+            </div>
+            {selectedSections.size === 0 && (
+              <div style={{ fontSize: 11, color: '#e05c5c', marginTop: 8 }}>
+                Select at least one section to continue.
+              </div>
+            )}
+          </div>
         </motion.section>
 
         {/* Target Company / Role */}
@@ -589,7 +661,7 @@ const SetupScreen: React.FC = () => {
             whileHover={{ scale: 1.03 }}
             whileTap={{ scale: 0.97 }}
             onClick={handleStart}
-            disabled={isStarting}
+            disabled={isStarting || selectedSections.size === 0}
             style={{
               background: `linear-gradient(135deg, ${defaultConfig.accentColor}, ${defaultConfig.secondaryColor})`,
               border: 'none',
@@ -599,7 +671,7 @@ const SetupScreen: React.FC = () => {
               fontSize: 16,
               fontWeight: 700,
               cursor: isStarting ? 'not-allowed' : 'pointer',
-              opacity: isStarting ? 0.7 : 1,
+              opacity: (isStarting || selectedSections.size === 0) ? 0.5 : 1,
               display: 'flex',
               alignItems: 'center',
               gap: 10,
