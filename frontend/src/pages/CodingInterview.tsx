@@ -27,14 +27,32 @@ interface Analysis {
   score: number;
 }
 
+// const fetchProblem = async (difficulty: string, slug?: string): Promise<Problem> => {
+//   const params = new URLSearchParams({ difficulty });
+//   if (slug) params.set('slug', slug);
+//   const r = await fetch(`/api/coding/problem?${params}`);
+//   if (!r.ok) throw new Error(await r.text());
+//   return r.json();
+// };
 const fetchProblem = async (difficulty: string, slug?: string): Promise<Problem> => {
   const params = new URLSearchParams({ difficulty });
   if (slug) params.set('slug', slug);
   const r = await fetch(`/api/coding/problem?${params}`);
-  if (!r.ok) throw new Error(await r.text());
-  return r.json();
+  const text = await r.text();
+  if (!r.ok) {
+    try {
+      const j = JSON.parse(text);
+      throw new Error(j.detail || j.message || text);
+    } catch {
+      throw new Error(text);
+    }
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error("Invalid JSON response from /api/coding/problem");
+  }
 };
-
 const getHint = async (problem: Problem, code: string, level: number): Promise<string> => {
   const r = await fetch('/api/coding/hint', {
     method: 'POST',
