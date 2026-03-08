@@ -59,6 +59,9 @@ export interface RespondResponse {
       specificity: number;
       depth: number;
       overall: number;
+      inflection: number;
+      clarity: number;
+      conciseness: number;
       summary: string;
       per_question: Array<{ question: string; answer_summary: string; score: number; feedback: string }>;
     };
@@ -126,6 +129,9 @@ export interface EndSessionResponse {
     specificity: number;
     depth: number;
     overall: number;
+    inflection: number;
+    clarity: number;
+    conciseness: number;
     summary: string;
     per_question: Array<{ question: string; answer_summary: string; score: number; feedback: string }>;
   };
