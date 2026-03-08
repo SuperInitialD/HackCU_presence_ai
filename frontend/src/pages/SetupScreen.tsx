@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Upload, Link, FileText, ChevronRight, CheckCircle, AlertCircle, Loader2, Briefcase } from 'lucide-react';
+import { Upload, Link, FileText, ChevronRight, CheckCircle, AlertCircle, Loader2, Github, Linkedin } from 'lucide-react';
 import { getCompany } from '../components/CompanyConfig';
 import { parseResume, fetchJD, startSession } from '../api/client';
 import type { InterviewSetup } from '../types';
@@ -11,6 +11,8 @@ const defaultConfig = getCompany();
 const SetupScreen: React.FC = () => {
   const navigate = useNavigate();
   const [companyFreeText, setCompanyFreeText] = useState('');
+  const [githubUrl, setGithubUrl] = useState('');
+  const [linkedinUrl, setLinkedinUrl] = useState('');
   const [resumeFile, setResumeFile] = useState<File | null>(null);
   const [resumeText, setResumeText] = useState('');
   const [jdMode, setJdMode] = useState<'url' | 'text'>('text');
@@ -75,6 +77,8 @@ const SetupScreen: React.FC = () => {
         company: companyFreeText.trim() || undefined,
         resume_text: resumeText || undefined,
         job_description: jdText || undefined,
+        github_url: githubUrl.trim() || undefined,
+        linkedin_url: linkedinUrl.trim() || undefined,
       });
 
       const setup: InterviewSetup = {
@@ -160,7 +164,7 @@ const SetupScreen: React.FC = () => {
             alignItems: 'center',
             gap: 12,
           }}>
-            <Briefcase size={18} color="#555577" style={{ flexShrink: 0 }} />
+            <FileText size={18} color="#555577" style={{ flexShrink: 0 }} />
             <input
               type="text"
               value={companyFreeText}
@@ -182,6 +186,50 @@ const SetupScreen: React.FC = () => {
           </div>
         </motion.section>
 
+        {/* GitHub + LinkedIn */}
+        <motion.section
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.15, duration: 0.5 }}
+        >
+          <h2 style={{ fontSize: 14, fontWeight: 600, color: '#8888aa', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>
+            02 — Profiles <span style={{ color: '#555577', fontWeight: 400 }}>(optional)</span>
+          </h2>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {/* GitHub */}
+            <div style={{
+              background: '#16161e', border: '1px solid #2a2a3e', borderRadius: 14,
+              padding: '14px 20px', display: 'flex', alignItems: 'center', gap: 12,
+            }}>
+              <Github size={18} color="#555577" style={{ flexShrink: 0 }} />
+              <input
+                type="url"
+                value={githubUrl}
+                onChange={e => setGithubUrl(e.target.value)}
+                placeholder="https://github.com/yourusername"
+                style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', color: '#e8e8f0', fontSize: 14, fontFamily: 'inherit' }}
+              />
+            </div>
+            {/* LinkedIn */}
+            <div style={{
+              background: '#16161e', border: '1px solid #2a2a3e', borderRadius: 14,
+              padding: '14px 20px', display: 'flex', alignItems: 'center', gap: 12,
+            }}>
+              <Linkedin size={18} color="#555577" style={{ flexShrink: 0 }} />
+              <input
+                type="url"
+                value={linkedinUrl}
+                onChange={e => setLinkedinUrl(e.target.value)}
+                placeholder="https://linkedin.com/in/yourprofile"
+                style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', color: '#e8e8f0', fontSize: 14, fontFamily: 'inherit' }}
+              />
+            </div>
+          </div>
+          <div style={{ marginTop: 8, fontSize: 12, color: '#555577' }}>
+            The AI will reference your GitHub projects and LinkedIn history during the interview.
+          </div>
+        </motion.section>
+
         {/* Resume Upload */}
         <motion.section
           initial={{ opacity: 0, y: 20 }}
@@ -189,7 +237,7 @@ const SetupScreen: React.FC = () => {
           transition={{ delay: 0.2, duration: 0.5 }}
         >
           <h2 style={{ fontSize: 14, fontWeight: 600, color: '#8888aa', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>
-            02 — Upload Resume <span style={{ color: '#555577', fontWeight: 400 }}>(optional)</span>
+            03 — Upload Resume <span style={{ color: '#555577', fontWeight: 400 }}>(optional)</span>
           </h2>
           <div
             onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
@@ -249,7 +297,7 @@ const SetupScreen: React.FC = () => {
           transition={{ delay: 0.3, duration: 0.5 }}
         >
           <h2 style={{ fontSize: 14, fontWeight: 600, color: '#8888aa', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>
-            03 — Job Description <span style={{ color: '#555577', fontWeight: 400 }}>(optional)</span>
+            04 — Job Description <span style={{ color: '#555577', fontWeight: 400 }}>(optional)</span>
           </h2>
           <div style={{
             background: '#16161e',

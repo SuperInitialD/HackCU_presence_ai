@@ -27,9 +27,25 @@ export interface StartSessionResponse {
 
 export interface RespondResponse {
   next_question?: string;
+  message?: string;
   feedback_hint?: string;
+  follow_up?: boolean;
   is_complete: boolean;
   score?: number;
+  checklist?: {
+    behavioral: {
+      introduction: boolean;
+      experience: boolean;
+      star_scenario: boolean;
+      skills_strengths: boolean;
+    };
+    technical: {
+      concepts: boolean;
+      problem_solving: boolean;
+      project_dive: boolean;
+      role_specific: boolean;
+    };
+  };
   results?: {
     overall_score: number;
     strengths: string[];
@@ -63,9 +79,11 @@ export const fetchJD = async (url: string): Promise<FetchJDResponse> => {
 };
 
 export const startSession = async (payload: {
-  company: string;
+  company?: string;
   resume_text?: string;
   job_description?: string;
+  github_url?: string;
+  linkedin_url?: string;
 }): Promise<StartSessionResponse> => {
   const { data } = await api.post<StartSessionResponse>('/session/start', payload);
   // Normalize: backend may return opening_message instead of first_question
