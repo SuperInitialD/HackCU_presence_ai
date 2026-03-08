@@ -286,44 +286,78 @@ class AIInterviewer:
             "checklist": current_checklist,
         }
 
-    def end_session(self, session_id: str, conversation_history: list[dict]) -> dict:
+    def end_session(
+        self,
+        session_id: str,
+        conversation_history: list[dict],
+        resume_text: str = "",
+        linkedin_url: str = "",
+    ) -> dict:
         system_prompt = self._system_prompts.get(session_id, "")
 
-        evaluation_prompt = """Interview complete. Evaluate the full conversation and return ONLY valid JSON:
-{
-  "overall_score": {"total": 7.5, "communication": 8.0, "technical_depth": 7.0, "problem_solving": 7.5, "culture_fit": 8.0, "confidence": 7.0},
-  "strengths": ["Specific strength with example", "Strength 2", "Strength 3"],
-  "areas_for_improvement": ["Specific actionable area 1", "Area 2"],
-  "standout_moments": ["Notable moment 1", "Notable moment 2"],
-  "hiring_recommendation": "Strong Yes / Yes / Maybe / No",
-  "summary": "2-3 honest sentences directly to the candidate referencing specific things they said."
-}
-Scores out of 10. Be honest and specific."""
+        resume_section = ""
+        if resume_text.strip():
+            resume_section = (
+                "\n## Resume Feedback\nProvide specific resume feedback in resume_feedback field.\n"
+                "Resume:\n" + resume_text.strip()[:2000]
+            )
+
+        linkedin_section = ""
+        if linkedin_url.strip():
+            linkedin_section = (
+                "\n## LinkedIn Feedback\nLinkedIn: " + linkedin_url.strip() +
+                "\nProvide profile improvement tips in linkedin_feedback field."
+            )
+
+        evaluation_prompt = (
+            "The interview is complete. Evaluate the full conversation.\n\n"
+            "Return ONLY valid JSON (no markdown):\n"
+            "{\n"
+            "  \"overall_score\": {\"total\": 7.5, \"communication\": 8.0, \"technical_depth\": 7.0, \"problem_solving\": 7.5, \"culture_fit\": 8.0, \"confidence\": 7.0},\n"
+            "  \"answer_quality\": {\n"
+            "    \"star_structure\": 7.0, \"specificity\": 6.5, \"depth\": 7.5, \"overall\": 7.0,\n"
+            "    \"summary\": \"1-2 sentences on how well they answered overall\",\n"
+            "    \"per_question\": [{{\"question\": \"...\"  , \"answer_summary\": \"...\", \"score\": 7, \"feedback\": \"...\"}}]\n"
+            "  },\n"
+            "  \"strengths\": [\"Specific strength with example\", \"Strength 2\", \"Strength 3\"],\n"
+            "  \"areas_for_improvement\": [\"Actionable area 1\", \"Area 2\"],\n"
+            "  \"standout_moments\": [\"Notable moment\", \"Another moment\"],\n"
+            "  \"resume_feedback\": {\"overall_impression\": \"...\", \"strengths\": [\"...\"], \"improvements\": [{\"section\": \"Summary\", \"issue\": \"...\", \"suggestion\": \"...\"}]},\n"
+            "  \"linkedin_feedback\": {\"overall_impression\": \"...\", \"improvements\": [{\"section\": \"Headline\", \"issue\": \"...\", \"suggestion\": \"...\"}]},\n"
+            "  \"hiring_recommendation\": \"Strong Yes / Yes / Maybe / No\",\n"
+            "  \"summary\": \"2-3 honest sentences directly to the candidate.\"\n"
+            "}\n\n"
+            "Scores out of 10. Be specific — reference actual things said.\n"
+            "Set resume_feedback to null if no resume. Set linkedin_feedback to null if no LinkedIn.\n"
+            + resume_section + linkedin_section
+        )
 
         messages = _history_to_messages(conversation_history)
         messages.append({"role": "user", "content": evaluation_prompt})
 
         client = _get_client()
-        response = client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=1024,
-            system=system_prompt or "You are an expert interview evaluator.",
-            messages=messages,
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            max_tokens=2048,
+            messages=[{"role": "system", "content": system_prompt or "You are an expert interview evaluator."}] + messages,
         )
 
-        raw = response.content[0].text
+        raw = response.choices[0].message.content or ""
         parsed = _parse_response(raw)
 
         self._system_prompts.pop(session_id, None)
         self._checklists.pop(session_id, None)
 
         return {
-            "overall_score": parsed.get("overall_score", {"total": 0}),
-            "strengths": parsed.get("strengths", []),
+            "overall_score":         parsed.get("overall_score", {"total": 0}),
+            "answer_quality":        parsed.get("answer_quality", {}),
+            "strengths":             parsed.get("strengths", []),
             "areas_for_improvement": parsed.get("areas_for_improvement", []),
-            "standout_moments": parsed.get("standout_moments", []),
+            "standout_moments":      parsed.get("standout_moments", []),
+            "resume_feedback":       parsed.get("resume_feedback"),
+            "linkedin_feedback":     parsed.get("linkedin_feedback"),
             "hiring_recommendation": parsed.get("hiring_recommendation", "Undetermined"),
-            "summary": parsed.get("summary", "Evaluation could not be generated."),
+            "summary":               parsed.get("summary", "Evaluation could not be generated."),
         }
 
 

@@ -219,6 +219,8 @@ async def end_session(session_id: str):
         evaluation = interviewer.end_session(
             session_id=session_id,
             conversation_history=session["conversation_history"],
+            resume_text=session.get("resume_text", ""),
+            linkedin_url=session.get("linkedin_url", ""),
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate evaluation: {str(e)}")
@@ -234,7 +236,15 @@ async def end_session(session_id: str):
 
     result = {
         "transcript": transcript,
-        "overall_score": evaluation,
+        "overall_score": evaluation.get("overall_score", evaluation),
+        "answer_quality": evaluation.get("answer_quality", {}),
+        "strengths": evaluation.get("strengths", []),
+        "areas_for_improvement": evaluation.get("areas_for_improvement", []),
+        "standout_moments": evaluation.get("standout_moments", []),
+        "resume_feedback": evaluation.get("resume_feedback"),
+        "linkedin_feedback": evaluation.get("linkedin_feedback"),
+        "hiring_recommendation": evaluation.get("hiring_recommendation", ""),
+        "summary": evaluation.get("summary", ""),
     }
 
     session["final_result"] = result
