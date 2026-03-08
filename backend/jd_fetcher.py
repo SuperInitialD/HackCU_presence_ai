@@ -308,26 +308,127 @@ def _route(soup: BeautifulSoup, url: str) -> dict:
 # Public API
 # ──────────────────────────────────────────────────────────────────────────────
 
-def fetch_from_url(url: str) -> dict:
+# def fetch_from_url(url: str) -> dict:
+#     """
+#     Fetch a job description from a URL.
+#     Uses Playwright headless browser for JS-rendered pages.
+#     Returns dict with title, company, description.
+#     """
+#     try:
+#         html = asyncio.run(_fetch_with_playwright(url))
+#     except Exception as e:
+#         return {
+#             "title": "Unknown Position",
+#             "company": _extract_company_from_url(url),
+#             "description": f"Failed to fetch page: {str(e)}",
+#         }
+
+#     soup = BeautifulSoup(html, "html.parser")
+
+#     # Check if we got a bot-detection page
+#     page_text = soup.get_text().lower()
+#     if any(kw in page_text for kw in ["please enable javascript", "enable cookies", "access denied", "captcha", "verify you are human"]):
+#         return {
+#             "title": "Access Blocked",
+#             "company": _extract_company_from_url(url),
+#             "description": "This job board blocked automated access. Please copy and paste the job description manually.",
+#         }
+
+#     result = _route(soup, url)
+
+#     # If description is too short, something went wrong
+#     if len(result.get("description", "")) < 100:
+#         result["description"] = "Job description could not be fully extracted. Try pasting the text directly."
+
+#     return result
+import logging
+try:
+    import cloudscraper
+    _HAS_CLOUDSCRAPER = True
+except Exception:
+    _HAS_CLOUDSCRAPER = False
+
+async def fetch_from_url(url: str) -> dict:
     """
     Fetch a job description from a URL.
-    Uses Playwright headless browser for JS-rendered pages.
+    Try Playwright (headless), then Playwright headful/persistent, then cloudscraper/requests.
     Returns dict with title, company, description.
     """
+    html = None
+    last_err = None
+
+    # 1) Try normal headless Playwright
     try:
-        html = asyncio.run(_fetch_with_playwright(url))
+        html = await _fetch_with_playwright(url)
     except Exception as e:
+        last_err = e
+        logging.info("Playwright headless failed: %s", e)
+
+    # 2) Retry with a headful / persistent context (less bot-like)
+    if not html:
+        try:
+            from playwright.async_api import async_playwright
+            async with async_playwright() as p:
+                ua = _random_ua()
+                viewport = _random_viewport()
+                # persistent context uses a user-data-dir and headful mode
+                browser = await p.chromium.launch_persistent_context(
+                    user_data_dir="/tmp/playwright_userdata",
+                    headless=False,
+                    viewport=viewport,
+                    user_agent=ua,
+                    args=["--no-default-browser-check", "--disable-blink-features=AutomationControlled"],
+                )
+                page = await browser.new_page()
+                await page.goto(url, wait_until="networkidle", timeout=30_000)
+                await page.wait_for_timeout(2000)
+                html = await page.content()
+                await browser.close()
+        except Exception as e:
+            last_err = e
+            logging.info("Playwright headful/persistent failed: %s", e)
+
+    # 3) Fallback to requests / cloudscraper
+    if not html:
+        try:
+            headers = {
+                "User-Agent": _random_ua(),
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.9",
+                "Referer": "https://www.google.com/",
+            }
+            if _HAS_CLOUDSCRAPER:
+                scraper = cloudscraper.create_scraper()
+                resp = scraper.get(url, headers=headers, timeout=20)
+            else:
+                resp = requests.get(url, headers=headers, timeout=20)
+            resp.raise_for_status()
+            html = resp.text
+        except Exception as e:
+            last_err = e
+            logging.info("Requests/cloudscraper fallback failed: %s", e)
+
+    if not html:
+        # actionable, non-technical message returned to frontend
         return {
             "title": "Unknown Position",
             "company": _extract_company_from_url(url),
-            "description": f"Failed to fetch page: {str(e)}",
+            "description": (
+                "Failed to fetch page: the site blocked automated access.\n\n"
+                "Options:\n"
+                " • Ensure Playwright browsers are installed and accessible to the server: `python -m playwright install`\n"
+                " • Install cloudscraper for a stronger fallback: `pip install cloudscraper`\n"
+                " • Use a real browser profile / proxy for Playwright (advanced)\n"
+                " • Or paste the job description text manually into the app\n\n"
+                f"Last error: {str(last_err)}"
+            ),
         }
 
     soup = BeautifulSoup(html, "html.parser")
 
-    # Check if we got a bot-detection page
+    # Check for obvious bot-detection or JS-block pages
     page_text = soup.get_text().lower()
-    if any(kw in page_text for kw in ["please enable javascript", "enable cookies", "access denied", "captcha", "verify you are human"]):
+    if any(kw in page_text for kw in ["please enable javascript", "access denied", "captcha", "verify you are human"]):
         return {
             "title": "Access Blocked",
             "company": _extract_company_from_url(url),
@@ -335,9 +436,6 @@ def fetch_from_url(url: str) -> dict:
         }
 
     result = _route(soup, url)
-
-    # If description is too short, something went wrong
     if len(result.get("description", "")) < 100:
         result["description"] = "Job description could not be fully extracted. Try pasting the text directly."
-
     return result
