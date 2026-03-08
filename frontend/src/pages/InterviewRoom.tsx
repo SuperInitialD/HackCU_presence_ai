@@ -5,6 +5,7 @@ import { Mic, MicOff, Send, Video, VideoOff, ChevronRight, AlertTriangle, Volume
 import { getCompany } from '../components/CompanyConfig';
 import { useFaceAnalysis } from '../hooks/useFaceAnalysis';
 import { respond, transcribeAudio, endSession } from '../api/client';
+import { createVideoRecorder, type VideoRecorder } from '../lib/video-recorder';
 import MetricGauge from '../components/MetricGauge';
 import type { Message, InterviewSetup, FaceMetrics, QuestionResult, InterviewResults } from '../types';
 
@@ -60,9 +61,9 @@ const InterviewRoom: React.FC = () => {
   const audioChunksRef = useRef<Blob[]>([]);
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const metricsSnapshotRef = useRef<FaceMetrics>({ eyeContact: 75, volume: 50, confidence: 70 });
-  const videoChunksRef = useRef<Blob[]>([]);
+
   const recordingStartRef = useRef<number>(0);
-  const videoRecorderRef = useRef<MediaRecorder | null>(null);
+  const videoRecorderRef = useRef<VideoRecorder | null>(null);
   const videoTimestampsRef = useRef<Array<{ time: number; label: string; feedback?: string }>>([]);
 
   // Refs to track current state inside async callbacks / effects
@@ -163,29 +164,15 @@ const InterviewRoom: React.FC = () => {
           videoRef.current.play().catch(() => {});
         }
 
-        // Start video recording — video-only to avoid mic conflicts with volume analyser
-        videoChunksRef.current = [];
+        // Start video recording — video-only stream, via createVideoRecorder
         recordingStartRef.current = Date.now();
         videoTimestampsRef.current = [];
         try {
-          // Pick best supported mimeType
-          const mimeType = [
-            'video/webm;codecs=vp8,opus',
-            'video/webm;codecs=vp8',
-            'video/webm',
-            'video/mp4',
-          ].find(t => MediaRecorder.isTypeSupported(t)) ?? '';
-
-          const recorderOptions = mimeType ? { mimeType } : {};
-          const recorder = new MediaRecorder(videoStream, recorderOptions);
-          recorder.ondataavailable = (e) => {
-            if (e.data && e.data.size > 0) videoChunksRef.current.push(e.data);
-          };
-          recorder.onerror = (e) => console.warn('[VideoRecorder] error:', e);
-          recorder.start(500); // chunk every 500ms — smaller chunks = more reliable
+          const recorder = createVideoRecorder(videoStream, 1000);
+          recorder.start();
           videoRecorderRef.current = recorder;
         } catch (err) {
-          console.warn('[VideoRecorder] MediaRecorder not supported:', err);
+          console.warn('[VideoRecorder] not supported:', err);
         }
 
         setCameraPermission('granted');
@@ -326,18 +313,10 @@ const InterviewRoom: React.FC = () => {
         // Stop video recording and compile blob
         let videoUrl: string | undefined;
         const videoTimestamps = [...videoTimestampsRef.current];
-        const recorder = videoRecorderRef.current;
-        if (recorder && recorder.state !== 'inactive') {
-          await new Promise<void>((res) => {
-            recorder.onstop = () => res();
-            // requestData() flushes the in-progress chunk before stop()
-            try { recorder.requestData(); } catch {}
-            recorder.stop();
-          });
-          if (videoChunksRef.current.length > 0) {
-            // Use the mimeType the recorder actually used
-            const recMime = recorder.mimeType || 'video/webm';
-            const blob = new Blob(videoChunksRef.current, { type: recMime });
+        if (videoRecorderRef.current?.isRecording()) {
+          const blob = await videoRecorderRef.current.stop();
+          videoRecorderRef.current = null;
+          if (blob && blob.size > 0) {
             videoUrl = URL.createObjectURL(blob);
           }
         }
