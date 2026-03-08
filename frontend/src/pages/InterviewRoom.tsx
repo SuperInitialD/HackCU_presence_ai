@@ -156,7 +156,7 @@ const InterviewRoom: React.FC = () => {
       try {
         const videoStream = await navigator.mediaDevices.getUserMedia({
           video: { width: { ideal: 1280 }, height: { ideal: 720 } },
-          audio: false,
+          audio: true,  // include mic so recording has sound
         });
         cameraStreamRef.current = videoStream;
         if (videoRef.current) {
