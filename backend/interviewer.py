@@ -54,7 +54,25 @@ def _build_system_prompt(
         if linkedin_url:
             profile_section += f"- LinkedIn: {linkedin_url}\n"
 
-    system = f"""You are conducting a structured mock interview for {company if company.strip() else 'a software engineering role'}.
+    # Pre-compute conditionals — Python 3.11 f-strings cannot use same quote type inside {}
+    company_name    = company.strip() if company.strip() else "a software engineering role"
+    resume_display  = resume_display
+    jd_display      = jd_display
+
+    if interview_type == "behavioral":
+        mode_instruction = "BEHAVIORAL-ONLY: Cover only the 4 behavioral sections. Mark all technical checklist items true immediately."
+        behavioral_label = "(Complete in order)"
+        technical_label  = "(SKIP — mark all true immediately)"
+    elif interview_type == "technical_verbal":
+        mode_instruction = "TECHNICAL VERBAL: Skip behavioral (mark all true immediately). Focus entirely on the 4 technical sections. No coding."
+        behavioral_label = "(SKIP — mark all true immediately)"
+        technical_label  = "(Complete in order — no coding)"
+    else:
+        mode_instruction = "FULL INTERVIEW: Complete all 8 sections in order — all 4 behavioral first, then all 4 technical."
+        behavioral_label = "(Complete in order)"
+        technical_label  = "(Complete in order — no coding)"
+
+    system = f"""You are conducting a structured mock interview for {company_name}.
 {company_context}
 
 ## Interviewer Persona
@@ -64,24 +82,24 @@ def _build_system_prompt(
 {preset['style_notes']}
 
 ## Candidate Resume
-{resume_text.strip() if resume_text.strip() else "No resume provided — ask the candidate to walk you through their background."}
+{resume_display}
 {profile_section}
 ## Job Description
-{jd.strip() if jd.strip() else "No job description provided — conduct a general software engineering interview."}
+{jd_display}
 
 ---
 
 ## Interview Structure
 
-{"BEHAVIORAL-ONLY: Cover only the 4 behavioral sections. Mark all technical sections true immediately." if interview_type == "behavioral" else "TECHNICAL VERBAL: Skip behavioral (mark all true immediately). Focus on the 4 technical sections only. No coding." if interview_type == "technical_verbal" else "FULL INTERVIEW: Complete all 8 sections in order — behavioral first, then technical."}
+{mode_instruction}
 
-### Behavioral Sections {"(SKIP — mark all true)" if interview_type == "technical_verbal" else "(Complete in order)"}
+### Behavioral Sections {behavioral_label}
 1. **introduction** — Background & Introduction: career story, how they got here, what drives them.
 2. **experience** — Professional Experience: dig into 1-2 key past roles or projects. What did they own? What was the impact?
 3. **star_scenario** — STAR Scenario: a real challenge — conflict, failure, leadership. Require Situation/Task/Action/Result. Follow up if any part is missing.
 4. **skills_strengths** — Skills & Strengths: what they bring, self-assessment, growth areas.
 
-### Technical Sections {"(SKIP — mark all true)" if interview_type == "behavioral" else "(Complete in order — no coding)"}
+### Technical Sections {technical_label}
 5. **concepts** — Technical Concepts tied to the JD/resume stack. System design tradeoffs, CS fundamentals, architecture decisions.
 6. **problem_solving** — give a scenario from the JD context, ask how they'd break it down. Probe for structure.
 7. **project_dive** — pick a project from resume/GitHub. Ask what they built, their role, the hard parts, what they'd change.
