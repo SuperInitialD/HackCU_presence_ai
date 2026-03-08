@@ -287,6 +287,7 @@ async def transcribe_audio(file: UploadFile = File(None), audio: UploadFile = Fi
 class TTSRequest(BaseModel):
     text: str
     voice: str = "nova"   # nova | shimmer | alloy | echo | fable | onyx
+    speed: float = 1.2    # 0.25–4.0; default slightly faster than normal
 
 
 @app.post("/api/tts")
@@ -304,12 +305,14 @@ async def text_to_speech(body: TTSRequest):
     voice = body.voice if body.voice in valid_voices else "nova"
 
     try:
+        speed = max(0.5, min(4.0, body.speed))  # clamp to safe range
         oai = OpenAI(api_key=os.environ.get("OPENAI_API_KEY", ""))
         response = oai.audio.speech.create(
             model="tts-1",
             voice=voice,  # type: ignore
             input=body.text.strip(),
             response_format="mp3",
+            speed=speed,
         )
         audio_bytes = response.content
     except Exception as e:
