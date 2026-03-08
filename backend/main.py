@@ -8,8 +8,10 @@ load_dotenv()
 
 from fastapi import FastAPI, HTTPException, UploadFile, File, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 import groq
+from openai import OpenAI
 
 from interviewer import AIInterviewer
 from resume_parser import parse_pdf, extract_key_info
@@ -256,6 +258,44 @@ async def transcribe_audio(file: UploadFile = File(None), audio: UploadFile = Fi
     # Groq returns a string when response_format="text"
     text = transcription if isinstance(transcription, str) else transcription.text
     return {"text": text.strip()}
+
+
+class TTSRequest(BaseModel):
+    text: str
+    voice: str = "nova"   # nova | shimmer | alloy | echo | fable | onyx
+
+
+@app.post("/api/tts")
+async def text_to_speech(body: TTSRequest):
+    """
+    Convert text to speech using OpenAI TTS.
+    Returns MP3 audio bytes.
+    Voices: nova (warm female), shimmer (expressive female), alloy (neutral),
+            echo (male), fable (British male), onyx (deep male)
+    """
+    if not body.text.strip():
+        raise HTTPException(status_code=400, detail="Text is required")
+
+    valid_voices = {"nova", "shimmer", "alloy", "echo", "fable", "onyx"}
+    voice = body.voice if body.voice in valid_voices else "nova"
+
+    try:
+        oai = OpenAI(api_key=os.environ.get("OPENAI_API_KEY", ""))
+        response = oai.audio.speech.create(
+            model="tts-1",
+            voice=voice,  # type: ignore
+            input=body.text.strip(),
+            response_format="mp3",
+        )
+        audio_bytes = response.content
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"TTS failed: {str(e)}")
+
+    return StreamingResponse(
+        io.BytesIO(audio_bytes),
+        media_type="audio/mpeg",
+        headers={"Content-Disposition": "inline; filename=speech.mp3"},
+    )
 
 
 @app.post("/api/parse-resume")

@@ -62,32 +62,67 @@ const InterviewRoom: React.FC = () => {
   const autoStartedForRef = useRef<string | null>(null);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const isSpeakingRef = useRef(false);
+  const currentAudioRef = useRef<HTMLAudioElement | null>(null);
 
-  // Speak text using Web Speech API — returns a promise that resolves when done
+  // Speak text via OpenAI TTS backend — returns promise that resolves when done
   const speak = useCallback((text: string): Promise<void> => {
-    return new Promise((resolve) => {
-      if (!window.speechSynthesis) { resolve(); return; }
-      window.speechSynthesis.cancel(); // stop anything currently playing
-      const utt = new SpeechSynthesisUtterance(text);
-      utt.rate = 0.95;
-      utt.pitch = 1.0;
-      utt.volume = 1.0;
-      // Pick a natural voice — prefer English
-      const voices = window.speechSynthesis.getVoices();
-      const preferred = voices.find(v =>
-        v.lang.startsWith('en') && (v.name.includes('Neural') || v.name.includes('Natural') || v.name.includes('Samantha') || v.name.includes('Google'))
-      ) || voices.find(v => v.lang.startsWith('en')) || voices[0];
-      if (preferred) utt.voice = preferred;
-      utt.onstart = () => { setIsSpeaking(true); isSpeakingRef.current = true; };
-      utt.onend = () => { setIsSpeaking(false); isSpeakingRef.current = false; resolve(); };
-      utt.onerror = () => { setIsSpeaking(false); isSpeakingRef.current = false; resolve(); };
-      window.speechSynthesis.speak(utt);
+    return new Promise(async (resolve) => {
+      // Stop any currently playing audio
+      if (currentAudioRef.current) {
+        currentAudioRef.current.pause();
+        currentAudioRef.current = null;
+      }
+
+      setIsSpeaking(true);
+      isSpeakingRef.current = true;
+
+      try {
+        const res = await fetch('/api/tts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text, voice: 'nova' }),
+        });
+
+        if (!res.ok) throw new Error('TTS request failed');
+
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const audio = new Audio(url);
+        currentAudioRef.current = audio;
+
+        audio.onended = () => {
+          URL.revokeObjectURL(url);
+          currentAudioRef.current = null;
+          setIsSpeaking(false);
+          isSpeakingRef.current = false;
+          resolve();
+        };
+        audio.onerror = () => {
+          URL.revokeObjectURL(url);
+          currentAudioRef.current = null;
+          setIsSpeaking(false);
+          isSpeakingRef.current = false;
+          resolve();
+        };
+
+        await audio.play();
+      } catch {
+        // TTS failed — skip speaking, continue to recording
+        setIsSpeaking(false);
+        isSpeakingRef.current = false;
+        resolve();
+      }
     });
   }, []);
 
-  // Stop speech on unmount
+  // Stop audio on unmount
   useEffect(() => {
-    return () => { window.speechSynthesis?.cancel(); };
+    return () => {
+      if (currentAudioRef.current) {
+        currentAudioRef.current.pause();
+        currentAudioRef.current = null;
+      }
+    };
   }, []);
 
   useEffect(() => { isRecordingRef.current = isRecording; }, [isRecording]);
@@ -275,8 +310,11 @@ const InterviewRoom: React.FC = () => {
 
   const startRecording = useCallback(async () => {
     if (isRecordingRef.current || isProcessingAudioRef.current || isThinkingRef.current) return;
-    // Stop any ongoing speech immediately when user wants to respond
-    window.speechSynthesis?.cancel();
+    // Stop any ongoing TTS immediately when user wants to respond
+    if (currentAudioRef.current) {
+      currentAudioRef.current.pause();
+      currentAudioRef.current = null;
+    }
     setIsSpeaking(false);
     isSpeakingRef.current = false;
     setTranscriptionError(false);
