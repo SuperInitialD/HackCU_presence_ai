@@ -27,9 +27,17 @@ export interface StartSessionResponse {
 
 export interface RespondResponse {
   next_question?: string;
+  message?: string;
   feedback_hint?: string;
+  follow_up?: boolean;
   is_complete: boolean;
   score?: number;
+  checklist?: {
+    resume: boolean;
+    profile: boolean;
+    technical: boolean;
+    behavioral: boolean;
+  };
   results?: {
     overall_score: number;
     strengths: string[];

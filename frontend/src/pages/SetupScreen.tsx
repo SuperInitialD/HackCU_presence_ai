@@ -164,7 +164,7 @@ const SetupScreen: React.FC = () => {
             alignItems: 'center',
             gap: 12,
           }}>
-            <Briefcase size={18} color="#555577" style={{ flexShrink: 0 }} />
+            <FileText size={18} color="#555577" style={{ flexShrink: 0 }} />
             <input
               type="text"
               value={companyFreeText}
