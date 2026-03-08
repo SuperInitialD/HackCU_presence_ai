@@ -55,6 +55,8 @@ class StartSessionRequest(BaseModel):
     company: Optional[str] = ""
     job_description: Optional[str] = ""
     resume_text: Optional[str] = ""
+    github_url: Optional[str] = ""
+    linkedin_url: Optional[str] = ""
 
 
 class MetricsModel(BaseModel):
@@ -97,8 +99,10 @@ async def start_session(body: StartSessionRequest):
         opening_message = interviewer.start_session(
             session_id=session_id,
             company=company_key,
-            jd=body.job_description,
-            resume_text=body.resume_text,
+            jd=body.job_description or "",
+            resume_text=body.resume_text or "",
+            github_url=body.github_url or "",
+            linkedin_url=body.linkedin_url or "",
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to start session: {str(e)}")
@@ -106,8 +110,10 @@ async def start_session(body: StartSessionRequest):
     SESSIONS[session_id] = {
         "session_id": session_id,
         "company": company_key,
-        "job_description": body.job_description,
-        "resume_text": body.resume_text,
+        "job_description": body.job_description or "",
+        "resume_text": body.resume_text or "",
+        "github_url": body.github_url or "",
+        "linkedin_url": body.linkedin_url or "",
         "conversation_history": [
             {"role": "assistant", "content": opening_message}
         ],
@@ -173,15 +179,15 @@ async def respond_to_session(session_id: str, body: RespondRequest):
     })
     session["question_count"] += 1
 
-    question_count = session["question_count"]
-    is_complete = question_count >= 8  # wrap after 8 exchanges
+    is_complete = result.get("end_interview", False)
 
     return {
         "message": result["message"],
-        "next_question": result["message"],   # frontend alias
+        "next_question": result["message"],
         "follow_up": result["follow_up"],
         "question_number": result["question_number"],
         "feedback_hint": result["feedback_hint"],
+        "checklist": result.get("checklist", {}),
         "is_complete": is_complete,
         "score": None,
     }
@@ -323,17 +329,33 @@ async def parse_resume(file: UploadFile = File(...)):
     }
 
 
+# @app.get("/api/fetch-jd")
+# async def fetch_jd(url: str = Query(..., description="URL of the job description page")):
+#     """
+#     Fetch and parse a job description from a URL.
+#     Returns title, company, and description text.
+#     """
+#     if not url.startswith(("http://", "https://")):
+#         raise HTTPException(status_code=400, detail="URL must start with http:// or https://")
+
+#     try:
+#         result = fetch_from_url(url)
+#     except Exception as e:
+#         raise HTTPException(status_code=500, detail=f"Failed to fetch job description: {str(e)}")
+
+#     return {
+#         "title": result.get("title", ""),
+#         "company": result.get("company", ""),
+#         "description": result.get("description", ""),
+#     }
 @app.get("/api/fetch-jd")
 async def fetch_jd(url: str = Query(..., description="URL of the job description page")):
     """
-    Fetch and parse a job description from a URL.
-    Returns title, company, and description text.
+    Fetch job description from URL (uses Playwright for JS-heavy pages).
     """
-    if not url.startswith(("http://", "https://")):
-        raise HTTPException(status_code=400, detail="URL must start with http:// or https://")
-
     try:
-        result = fetch_from_url(url)
+        # Await the async fetch_from_url coroutine
+        result = await fetch_from_url(url)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch job description: {str(e)}")
 
@@ -342,7 +364,6 @@ async def fetch_jd(url: str = Query(..., description="URL of the job description
         "company": result.get("company", ""),
         "description": result.get("description", ""),
     }
-
 
 @app.post("/api/analyze-frame")
 async def analyze_frame(file: UploadFile = File(...)):
