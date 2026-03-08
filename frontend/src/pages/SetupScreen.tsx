@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Upload, Link, FileText, ChevronRight, CheckCircle, AlertCircle, Loader2, Github, Linkedin, Lock } from 'lucide-react';
+import { Upload, Link, FileText, ChevronRight, CheckCircle, AlertCircle, Loader2, Github, Linkedin } from 'lucide-react';
 import { getCompany } from '../components/CompanyConfig';
 import { parseResume, fetchJD, startSession } from '../api/client';
 import type { InterviewSetup } from '../types';
@@ -106,15 +106,28 @@ const SetupScreen: React.FC = () => {
   };
 
   const handleStart = async () => {
+    // Coding interview goes to a separate page — no backend session needed upfront
+    if (interviewMode === 'technical' && technicalSubMode === 'coding') {
+      navigate('/coding', {
+        state: {
+          setup: {
+            company: companyFreeText.trim() || undefined,
+            resumeText,
+            jobDescription: jdText,
+          },
+          difficulty: 'medium',
+        },
+      });
+      return;
+    }
+
     setIsStarting(true);
     const interviewType =
       interviewMode === 'behavioral'
         ? 'behavioral'
         : interviewMode === 'full'
         ? 'full'
-        : technicalSubMode === 'verbal'
-        ? 'technical_verbal'
-        : 'behavioral'; // fallback — coding not yet selectable
+        : 'technical_verbal';
 
     try {
       const session = await startSession({
@@ -284,56 +297,39 @@ const SetupScreen: React.FC = () => {
                     </div>
                   </button>
 
-                  {/* Coding Interview — Coming Soon */}
-                  <div
+                  {/* Coding Interview */}
+                  <button
+                    onClick={() => setTechnicalSubMode('coding')}
                     style={{
-                      background: '#12121a',
-                      border: '2px solid #1e1e2e',
+                      background: technicalSubMode === 'coding' ? `${accentColor}18` : '#12121a',
+                      border: `2px solid ${technicalSubMode === 'coding' ? accentColor : '#2a2a3e'}`,
                       borderRadius: 12,
                       padding: '16px 18px',
-                      cursor: 'not-allowed',
+                      cursor: 'pointer',
                       textAlign: 'left',
-                      opacity: 0.5,
-                      position: 'relative',
-                      userSelect: 'none',
+                      transition: 'all 0.2s ease',
+                      outline: 'none',
                     }}
                   >
                     <div style={{
-                      position: 'absolute',
-                      top: 10,
-                      right: 10,
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 4,
-                      background: '#2a2a3e',
-                      borderRadius: 20,
-                      padding: '2px 8px',
-                      fontSize: 10,
-                      fontWeight: 700,
-                      color: '#8888aa',
-                      letterSpacing: '0.04em',
-                    }}>
-                      <Lock size={9} />
-                      COMING SOON
-                    </div>
-                    <div style={{
                       fontSize: 13,
                       fontWeight: 700,
-                      color: '#555577',
+                      color: technicalSubMode === 'coding' ? accentColor : '#c8c8e0',
                       marginBottom: 6,
                     }}>
                       💻 Coding Interview
                     </div>
-                    <div style={{ fontSize: 12, color: '#3a3a55', lineHeight: 1.5 }}>
-                      Share your screen. AI monitors your code and assists when needed.
+                    <div style={{ fontSize: 12, color: '#555577', lineHeight: 1.5 }}>
+                      LeetCode problems in TypeScript. AI coaches every 5–8 min + hint button.
                     </div>
-                  </div>
+                  </button>
                 </div>
               </motion.div>
             )}
           </AnimatePresence>
 
-          {/* Focus Area Chips */}
+          {/* Focus Area Chips — hide for coding interview */}
+          {!(interviewMode === 'technical' && technicalSubMode === 'coding') && (
           <div style={{ marginTop: 16 }}>
             <div style={{ fontSize: 12, fontWeight: 600, color: '#8888aa', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>
               Focus Areas — select what to cover
@@ -371,6 +367,7 @@ const SetupScreen: React.FC = () => {
               </div>
             )}
           </div>
+          )}
         </motion.section>
 
         {/* Target Company / Role */}
@@ -661,7 +658,7 @@ const SetupScreen: React.FC = () => {
             whileHover={{ scale: 1.03 }}
             whileTap={{ scale: 0.97 }}
             onClick={handleStart}
-            disabled={isStarting || selectedSections.size === 0}
+            disabled={isStarting || (!(interviewMode === 'technical' && technicalSubMode === 'coding') && selectedSections.size === 0)}
             style={{
               background: `linear-gradient(135deg, ${defaultConfig.accentColor}, ${defaultConfig.secondaryColor})`,
               border: 'none',
@@ -671,7 +668,7 @@ const SetupScreen: React.FC = () => {
               fontSize: 16,
               fontWeight: 700,
               cursor: isStarting ? 'not-allowed' : 'pointer',
-              opacity: (isStarting || selectedSections.size === 0) ? 0.5 : 1,
+              opacity: (isStarting || (!(interviewMode === 'technical' && technicalSubMode === 'coding') && selectedSections.size === 0)) ? 0.5 : 1,
               display: 'flex',
               alignItems: 'center',
               gap: 10,
