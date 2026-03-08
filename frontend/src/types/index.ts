@@ -43,6 +43,39 @@ export interface QuestionResult {
   confidence: number;
 }
 
+export interface AnswerQualityPerQuestion {
+  question: string;
+  answer_summary: string;
+  score: number;
+  feedback: string;
+}
+
+export interface AnswerQuality {
+  star_structure: number;
+  specificity: number;
+  depth: number;
+  overall: number;
+  summary: string;
+  per_question: AnswerQualityPerQuestion[];
+}
+
+export interface FeedbackImprovement {
+  section: string;
+  issue: string;
+  suggestion: string;
+}
+
+export interface ResumeFeedback {
+  overall_impression: string;
+  strengths: string[];
+  improvements: FeedbackImprovement[];
+}
+
+export interface LinkedInFeedback {
+  overall_impression: string;
+  improvements: FeedbackImprovement[];
+}
+
 export interface InterviewResults {
   sessionId: string;
   company?: string;
@@ -54,6 +87,9 @@ export interface InterviewResults {
   improvements: string[];
   questions: QuestionResult[];
   duration: number;
+  answer_quality?: AnswerQuality;
+  resume_feedback?: ResumeFeedback | null;
+  linkedin_feedback?: LinkedInFeedback | null;
 }
 
 export interface SessionState {

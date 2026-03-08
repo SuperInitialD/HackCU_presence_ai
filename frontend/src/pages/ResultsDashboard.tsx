@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import { RotateCcw, TrendingUp, AlertCircle, Eye, Brain, Shield, ChevronDown, ChevronUp, Star } from 'lucide-react';
 import { getCompany } from '../components/CompanyConfig';
 import MetricGauge from '../components/MetricGauge';
-import type { InterviewResults } from '../types';
+import type { InterviewResults, AnswerQualityPerQuestion, FeedbackImprovement } from '../types';
 
 const MOCK_RESULTS: InterviewResults = {
   sessionId: 'demo',
@@ -46,6 +46,8 @@ const MOCK_RESULTS: InterviewResults = {
   duration: 18,
 };
 
+// ─── ScoreRing ────────────────────────────────────────────────────────────────
+
 const ScoreRing: React.FC<{ score: number; color: string; size?: number }> = ({ score, color, size = 120 }) => {
   const radius = (size - 16) / 2;
   const circumference = 2 * Math.PI * radius;
@@ -78,6 +80,153 @@ const ScoreRing: React.FC<{ score: number; color: string; size?: number }> = ({ 
     </div>
   );
 };
+
+// ─── ScoreBar (0–10) ──────────────────────────────────────────────────────────
+
+const scoreBarColor = (v: number): string =>
+  v >= 7 ? '#22c55e' : v >= 5 ? '#eab308' : '#ef4444';
+
+const ScoreBar: React.FC<{ label: string; value: number }> = ({ label, value }) => {
+  const pct = (value / 10) * 100;
+  const color = scoreBarColor(value);
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span style={{ fontSize: 12, color: '#8888aa', fontWeight: 600 }}>{label}</span>
+        <span style={{ fontSize: 13, fontWeight: 800, color }}>{value}/10</span>
+      </div>
+      <div style={{ height: 8, borderRadius: 4, background: '#1c1c28', overflow: 'hidden' }}>
+        <motion.div
+          initial={{ width: 0 }}
+          animate={{ width: `${pct}%` }}
+          transition={{ duration: 1, ease: 'easeOut' }}
+          style={{
+            height: '100%',
+            borderRadius: 4,
+            background: color,
+            boxShadow: `0 0 8px ${color}88`,
+          }}
+        />
+      </div>
+    </div>
+  );
+};
+
+// ─── AnswerQualitySection ────────────────────────────────────────────────────
+
+const AnswerQuestionCard: React.FC<{ qr: AnswerQualityPerQuestion; index: number; accentColor: string }> = ({
+  qr, index, accentColor,
+}) => {
+  const [expanded, setExpanded] = React.useState(false);
+  const scoreColor = scoreBarColor(qr.score / 10);
+
+  return (
+    <div
+      style={{
+        background: '#1c1c28',
+        border: '1px solid #2a2a3e',
+        borderRadius: 12,
+        overflow: 'hidden',
+      }}
+    >
+      <button
+        onClick={() => setExpanded(!expanded)}
+        style={{
+          width: '100%',
+          background: 'none',
+          border: 'none',
+          padding: '14px 16px',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: 12,
+          textAlign: 'left',
+        }}
+      >
+        <div style={{
+          width: 28, height: 28,
+          borderRadius: 7,
+          background: `${accentColor}22`,
+          border: `1px solid ${accentColor}44`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 12, fontWeight: 700, color: accentColor,
+          flexShrink: 0,
+        }}>
+          {index + 1}
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 13, color: '#e8e8f0', fontWeight: 600, lineHeight: 1.4, marginBottom: 4 }}>
+            {qr.question}
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, marginTop: 4 }}>
+          <span style={{
+            fontSize: 12, fontWeight: 800, color: scoreColor,
+            background: `${scoreColor}18`,
+            border: `1px solid ${scoreColor}44`,
+            borderRadius: 6, padding: '2px 8px',
+          }}>
+            {qr.score}/10
+          </span>
+          <span style={{ color: '#555577' }}>
+            {expanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+          </span>
+        </div>
+      </button>
+
+      {expanded && (
+        <motion.div
+          initial={{ opacity: 0, height: 0 }}
+          animate={{ opacity: 1, height: 'auto' }}
+          style={{ borderTop: '1px solid #2a2a3e', padding: '16px', display: 'flex', flexDirection: 'column', gap: 12 }}
+        >
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: '#555577', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Answer Summary</div>
+            <div style={{ fontSize: 13, color: '#c8c8e0', lineHeight: 1.6, background: '#16161e', padding: '10px 12px', borderRadius: 8, border: '1px solid #2a2a3e' }}>
+              {qr.answer_summary}
+            </div>
+          </div>
+          <div style={{ padding: '10px 12px', background: `${accentColor}12`, border: `1px solid ${accentColor}33`, borderRadius: 8, borderLeft: `3px solid ${accentColor}` }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: accentColor, marginBottom: 5 }}>Feedback</div>
+            <div style={{ fontSize: 13, color: '#c8c8e0', lineHeight: 1.6 }}>{qr.feedback}</div>
+          </div>
+        </motion.div>
+      )}
+    </div>
+  );
+};
+
+// ─── ResumeFeedbackSection ────────────────────────────────────────────────────
+
+const ImprovementCard: React.FC<{ item: FeedbackImprovement; accentColor: string }> = ({ item, accentColor }) => (
+  <div style={{
+    background: '#1c1c28',
+    border: '1px solid #2a2a3e',
+    borderRadius: 10,
+    padding: '14px 16px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 8,
+  }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <span style={{
+        fontSize: 11, fontWeight: 700,
+        color: accentColor,
+        background: `${accentColor}18`,
+        border: `1px solid ${accentColor}44`,
+        borderRadius: 6,
+        padding: '2px 8px',
+        letterSpacing: '0.04em',
+      }}>
+        {item.section}
+      </span>
+    </div>
+    <div style={{ fontSize: 13, color: '#e8e8f0', fontWeight: 600, lineHeight: 1.4 }}>{item.issue}</div>
+    <div style={{ fontSize: 13, color: '#8888aa', lineHeight: 1.5 }}>💡 {item.suggestion}</div>
+  </div>
+);
+
+// ─── QuestionCard (existing per-session questions) ────────────────────────────
 
 const QuestionCard: React.FC<{ qr: InterviewResults['questions'][0]; index: number; accentColor: string }> = ({ qr, index, accentColor }) => {
   const [expanded, setExpanded] = React.useState(false);
@@ -164,6 +313,16 @@ const QuestionCard: React.FC<{ qr: InterviewResults['questions'][0]; index: numb
   );
 };
 
+// ─── Section Header ───────────────────────────────────────────────────────────
+
+const SectionHeader: React.FC<{ title: string }> = ({ title }) => (
+  <h2 style={{ fontSize: 16, fontWeight: 700, color: '#e8e8f0', margin: '0 0 16px', letterSpacing: '-0.01em' }}>
+    {title}
+  </h2>
+);
+
+// ─── ResultsDashboard ─────────────────────────────────────────────────────────
+
 const ResultsDashboard: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -176,7 +335,8 @@ const ResultsDashboard: React.FC = () => {
   return (
     <div style={{ minHeight: '100vh', background: '#0f0f13', padding: '48px 24px' }}>
       <div style={{ maxWidth: 860, margin: '0 auto' }}>
-        {/* Header */}
+
+        {/* ── Header ── */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -217,7 +377,7 @@ const ResultsDashboard: React.FC = () => {
           </motion.button>
         </motion.div>
 
-        {/* Score Overview */}
+        {/* ── Score Overview ── */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -275,7 +435,56 @@ const ResultsDashboard: React.FC = () => {
           </div>
         </motion.div>
 
-        {/* Strengths & Improvements */}
+        {/* ── Answer Quality ── */}
+        {results.answer_quality && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.15 }}
+            style={{
+              background: '#16161e',
+              border: '1px solid #2a2a3e',
+              borderRadius: 20,
+              padding: '28px 32px',
+              marginBottom: 24,
+            }}
+          >
+            <SectionHeader title="🎯 Answer Quality" />
+
+            {/* Metric bars row */}
+            <div style={{ display: 'flex', gap: 20, marginBottom: 20, flexWrap: 'wrap' }}>
+              <ScoreBar label="STAR Structure" value={results.answer_quality.star_structure} />
+              <ScoreBar label="Specificity" value={results.answer_quality.specificity} />
+              <ScoreBar label="Depth" value={results.answer_quality.depth} />
+              <ScoreBar label="Overall Answer Score" value={results.answer_quality.overall} />
+            </div>
+
+            {/* Summary */}
+            <div style={{
+              fontSize: 13, color: '#c8c8e0', lineHeight: 1.6,
+              background: '#1c1c28', padding: '14px 16px', borderRadius: 12,
+              border: '1px solid #2a2a3e', marginBottom: 20,
+            }}>
+              {results.answer_quality.summary}
+            </div>
+
+            {/* Per-question expandable cards */}
+            {results.answer_quality.per_question.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {results.answer_quality.per_question.map((qr, i) => (
+                  <AnswerQuestionCard
+                    key={i}
+                    qr={qr}
+                    index={i}
+                    accentColor={companyConfig.accentColor}
+                  />
+                ))}
+              </div>
+            )}
+          </motion.div>
+        )}
+
+        {/* ── Strengths & Improvements ── */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -327,17 +536,114 @@ const ResultsDashboard: React.FC = () => {
           </div>
         </motion.div>
 
-        {/* Per-Question Breakdown */}
-        {results.questions.length > 0 && (
+        {/* ── Resume Feedback ── */}
+        {results.resume_feedback != null && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.25 }}
+            style={{
+              background: '#16161e',
+              border: '1px solid #2a2a3e',
+              borderRadius: 20,
+              padding: '28px 32px',
+              marginBottom: 24,
+            }}
+          >
+            <SectionHeader title="📄 Resume Feedback" />
+
+            {/* Overall impression */}
+            <div style={{
+              fontSize: 13, color: '#c8c8e0', lineHeight: 1.6,
+              background: '#1c1c28', padding: '14px 16px', borderRadius: 12,
+              border: '1px solid #2a2a3e', marginBottom: 20,
+            }}>
+              {results.resume_feedback.overall_impression}
+            </div>
+
+            {/* Strengths */}
+            {results.resume_feedback.strengths.length > 0 && (
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: '#22c55e', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>
+                  Strengths
+                </div>
+                <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {results.resume_feedback.strengths.map((s, i) => (
+                    <li key={i} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                      <Star size={13} color="#22c55e" style={{ marginTop: 3, flexShrink: 0 }} />
+                      <span style={{ fontSize: 13, color: '#c8c8e0', lineHeight: 1.5 }}>{s}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* Improvements */}
+            {results.resume_feedback.improvements.length > 0 && (
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: '#eab308', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>
+                  Improvements
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {results.resume_feedback.improvements.map((item, i) => (
+                    <ImprovementCard key={i} item={item} accentColor={companyConfig.accentColor} />
+                  ))}
+                </div>
+              </div>
+            )}
+          </motion.div>
+        )}
+
+        {/* ── LinkedIn Feedback ── */}
+        {results.linkedin_feedback != null && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.3 }}
+            style={{
+              background: '#16161e',
+              border: '1px solid #2a2a3e',
+              borderRadius: 20,
+              padding: '28px 32px',
+              marginBottom: 24,
+            }}
+          >
+            <SectionHeader title="🔗 LinkedIn Feedback" />
+
+            {/* Overall impression */}
+            <div style={{
+              fontSize: 13, color: '#c8c8e0', lineHeight: 1.6,
+              background: '#1c1c28', padding: '14px 16px', borderRadius: 12,
+              border: '1px solid #2a2a3e', marginBottom: 20,
+            }}>
+              {results.linkedin_feedback.overall_impression}
+            </div>
+
+            {/* Improvements */}
+            {results.linkedin_feedback.improvements.length > 0 && (
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: '#eab308', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>
+                  Improvements
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {results.linkedin_feedback.improvements.map((item, i) => (
+                    <ImprovementCard key={i} item={item} accentColor={companyConfig.accentColor} />
+                  ))}
+                </div>
+              </div>
+            )}
+          </motion.div>
+        )}
+
+        {/* ── Per-Question Breakdown ── */}
+        {results.questions.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.35 }}
             style={{ marginBottom: 48 }}
           >
-            <h2 style={{ fontSize: 16, fontWeight: 700, color: '#e8e8f0', margin: '0 0 16px', letterSpacing: '-0.01em' }}>
-              Question Breakdown
-            </h2>
+            <SectionHeader title="Question Breakdown" />
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               {results.questions.map((qr, i) => (
                 <QuestionCard key={i} qr={qr} index={i} accentColor={companyConfig.accentColor} />
@@ -346,7 +652,7 @@ const ResultsDashboard: React.FC = () => {
           </motion.div>
         )}
 
-        {/* CTA */}
+        {/* ── CTA ── */}
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -380,6 +686,7 @@ const ResultsDashboard: React.FC = () => {
             Each session improves your score. Keep going.
           </div>
         </motion.div>
+
       </div>
     </div>
   );
