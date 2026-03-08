@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Mic, MicOff, Send, Video, VideoOff, ChevronRight, AlertTriangle, Volume2 } from 'lucide-react';
 import { getCompany } from '../components/CompanyConfig';
 import { useFaceAnalysis } from '../hooks/useFaceAnalysis';
-import { respond, transcribeAudio } from '../api/client';
+import { respond, transcribeAudio, endSession } from '../api/client';
 import MetricGauge from '../components/MetricGauge';
 import type { Message, InterviewSetup, FaceMetrics, QuestionResult, InterviewResults } from '../types';
 
@@ -68,6 +68,7 @@ const InterviewRoom: React.FC = () => {
   const autoStartedForRef = useRef<string | null>(null);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [ttsSpeed, setTtsSpeed] = useState(1.2);
+  const ttsSpeedRef = useRef(1.2);
   const isSpeakingRef = useRef(false);
   const currentAudioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -87,7 +88,7 @@ const InterviewRoom: React.FC = () => {
         const res = await fetch('/api/tts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text, voice: 'nova', speed: ttsSpeed }),
+          body: JSON.stringify({ text, voice: 'nova', speed: 1.0 }),  // playbackRate handles speed client-side
         });
 
         if (!res.ok) throw new Error('TTS request failed');
@@ -95,6 +96,7 @@ const InterviewRoom: React.FC = () => {
         const blob = await res.blob();
         const url = URL.createObjectURL(blob);
         const audio = new Audio(url);
+        audio.playbackRate = ttsSpeedRef.current;
         currentAudioRef.current = audio;
 
         audio.onended = () => {
@@ -278,53 +280,64 @@ const InterviewRoom: React.FC = () => {
         && Object.values(updatedChecklist.technical).every(Boolean);
 
       if (response.is_complete || allDone) {
+        setIsComplete(true);
+
         const avgMetric = (key: keyof FaceMetrics) =>
           metricsHistory.length > 0
             ? metricsHistory.reduce((s, mm) => s + mm[key], 0) / metricsHistory.length
             : 70;
 
         const allResults = [...questionResults, result];
-        const overallScore = Math.round(allResults.reduce((s, r) => s + r.score, 0) / allResults.length);
-
         const eyeContactAvg = avgMetric('eyeContact');
         const stressAvg     = avgMetric('stress');
         const confidenceAvg = avgMetric('confidence');
-
-        // Presence score: eye contact + inverted stress + confidence, averaged to 0-100
         const presenceScore = Math.round((eyeContactAvg + (100 - stressAvg) + confidenceAvg) / 3);
 
-        // Interview performance score: from AI answer_quality (0-10 → 0-100) or fallback to per-question avg
-        const aq = response.results?.answer_quality;
-        const interviewScore = aq?.overall != null
-          ? Math.round(aq.overall * 10)
-          : response.results?.overall_score?.total != null
-          ? Math.round(response.results.overall_score.total * 10)
-          : overallScore;
+        // Call the real end-session endpoint for AI evaluation
+        try {
+          const evaluation = await endSession(sessionId);
 
-        const interviewResults: InterviewResults = {
-          sessionId,
-          company: setup.company,
-          overallScore: Math.round((presenceScore + interviewScore) / 2),
-          presenceScore,
-          interviewScore,
-          eyeContactAvg,
-          stressAvg,
-          confidenceAvg,
-          strengths: response.results?.strengths || [],
-          improvements: response.results?.areas_for_improvement || [],
-          questions: allResults,
-          duration: Math.round((Date.now() - new Date(messages[0].timestamp).getTime()) / 1000 / 60),
-          hiring_recommendation: response.results?.hiring_recommendation,
-          summary: response.results?.summary,
-          answer_quality: response.results?.answer_quality,
-          resume_feedback: response.results?.resume_feedback ?? null,
-          linkedin_feedback: response.results?.linkedin_feedback ?? null,
-        };
+          const aq = evaluation.answer_quality;
+          const interviewScore = aq?.overall != null
+            ? Math.round(aq.overall * 10)
+            : evaluation.overall_score?.total != null
+            ? Math.round(evaluation.overall_score.total * 10)
+            : Math.round(allResults.reduce((s, r) => s + r.score, 0) / Math.max(allResults.length, 1));
 
-        setIsComplete(true);
-        setTimeout(() => {
+          const interviewResults: InterviewResults = {
+            sessionId,
+            company: setup.company,
+            overallScore: Math.round((presenceScore + interviewScore) / 2),
+            presenceScore,
+            interviewScore,
+            eyeContactAvg,
+            stressAvg,
+            confidenceAvg,
+            strengths: evaluation.strengths || [],
+            improvements: evaluation.areas_for_improvement || [],
+            questions: allResults,
+            duration: Math.round((Date.now() - new Date(messages[0].timestamp).getTime()) / 1000 / 60),
+            hiring_recommendation: evaluation.hiring_recommendation,
+            summary: evaluation.summary,
+            answer_quality: evaluation.answer_quality,
+            resume_feedback: evaluation.resume_feedback ?? null,
+            linkedin_feedback: evaluation.linkedin_feedback ?? null,
+          };
+
           navigate('/results', { state: { results: interviewResults } });
-        }, 1500);
+        } catch {
+          // Fallback if end-session fails — navigate with what we have
+          const interviewScore = Math.round(allResults.reduce((s, r) => s + r.score, 0) / Math.max(allResults.length, 1));
+          navigate('/results', { state: { results: {
+            sessionId, company: setup.company,
+            overallScore: Math.round((presenceScore + interviewScore) / 2),
+            presenceScore, interviewScore,
+            eyeContactAvg, stressAvg, confidenceAvg,
+            strengths: [], improvements: [], questions: allResults,
+            duration: Math.round((Date.now() - new Date(messages[0].timestamp).getTime()) / 1000 / 60),
+            resume_feedback: null, linkedin_feedback: null,
+          }}});
+        }
       } else if (response.next_question) {
         if (!response.follow_up) setQuestionCount(prev => prev + 1);
         const interviewerMsg: Message = {
@@ -489,7 +502,12 @@ const InterviewRoom: React.FC = () => {
               max={2.0}
               step={0.1}
               value={ttsSpeed}
-              onChange={e => setTtsSpeed(parseFloat(e.target.value))}
+              onChange={e => {
+                const v = parseFloat(e.target.value);
+                setTtsSpeed(v);
+                ttsSpeedRef.current = v;
+                if (currentAudioRef.current) currentAudioRef.current.playbackRate = v;
+              }}
               style={{ width: 72, accentColor: companyConfig.accentColor, cursor: 'pointer' }}
             />
             <span style={{ fontSize: 11, color: companyConfig.accentColor, fontWeight: 700, minWidth: 28 }}>{ttsSpeed.toFixed(1)}×</span>

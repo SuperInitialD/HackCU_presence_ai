@@ -118,6 +118,38 @@ export const respond = async (
   return data;
 };
 
+export interface EndSessionResponse {
+  transcript: Array<{ role: string; content: string }>;
+  overall_score: { total: number; communication: number; technical_depth: number; problem_solving: number; culture_fit: number; confidence: number };
+  answer_quality?: {
+    star_structure: number;
+    specificity: number;
+    depth: number;
+    overall: number;
+    summary: string;
+    per_question: Array<{ question: string; answer_summary: string; score: number; feedback: string }>;
+  };
+  strengths: string[];
+  areas_for_improvement: string[];
+  standout_moments?: string[];
+  hiring_recommendation?: string;
+  summary?: string;
+  resume_feedback?: {
+    overall_impression: string;
+    strengths: string[];
+    improvements: Array<{ section: string; issue: string; suggestion: string }>;
+  } | null;
+  linkedin_feedback?: {
+    overall_impression: string;
+    improvements: Array<{ section: string; issue: string; suggestion: string }>;
+  } | null;
+}
+
+export const endSession = async (sessionId: string): Promise<EndSessionResponse> => {
+  const { data } = await api.post<EndSessionResponse>(`/session/${sessionId}/end`);
+  return data;
+};
+
 export const transcribeAudio = async (audioBlob: Blob): Promise<TranscribeResponse> => {
   const formData = new FormData();
   formData.append('audio', audioBlob, 'recording.webm');
