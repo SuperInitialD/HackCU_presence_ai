@@ -329,17 +329,33 @@ async def parse_resume(file: UploadFile = File(...)):
     }
 
 
+# @app.get("/api/fetch-jd")
+# async def fetch_jd(url: str = Query(..., description="URL of the job description page")):
+#     """
+#     Fetch and parse a job description from a URL.
+#     Returns title, company, and description text.
+#     """
+#     if not url.startswith(("http://", "https://")):
+#         raise HTTPException(status_code=400, detail="URL must start with http:// or https://")
+
+#     try:
+#         result = fetch_from_url(url)
+#     except Exception as e:
+#         raise HTTPException(status_code=500, detail=f"Failed to fetch job description: {str(e)}")
+
+#     return {
+#         "title": result.get("title", ""),
+#         "company": result.get("company", ""),
+#         "description": result.get("description", ""),
+#     }
 @app.get("/api/fetch-jd")
 async def fetch_jd(url: str = Query(..., description="URL of the job description page")):
     """
-    Fetch and parse a job description from a URL.
-    Returns title, company, and description text.
+    Fetch job description from URL (uses Playwright for JS-heavy pages).
     """
-    if not url.startswith(("http://", "https://")):
-        raise HTTPException(status_code=400, detail="URL must start with http:// or https://")
-
     try:
-        result = fetch_from_url(url)
+        # Await the async fetch_from_url coroutine
+        result = await fetch_from_url(url)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch job description: {str(e)}")
 
@@ -348,7 +364,6 @@ async def fetch_jd(url: str = Query(..., description="URL of the job description
         "company": result.get("company", ""),
         "description": result.get("description", ""),
     }
-
 
 @app.post("/api/analyze-frame")
 async def analyze_frame(file: UploadFile = File(...)):

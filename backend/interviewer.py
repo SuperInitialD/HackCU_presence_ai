@@ -1,16 +1,16 @@
 import os
 import json
 import re
-import anthropic
+from openai import OpenAI
 from company_presets import COMPANY_PRESETS
 
 _client = None
 
 
-def _get_client() -> anthropic.Anthropic:
+def _get_client() -> OpenAI:
     global _client
     if _client is None:
-        _client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+        _client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
     return _client
 
 
@@ -199,14 +199,16 @@ class AIInterviewer:
         )
 
         client = _get_client()
-        response = client.messages.create(
-            model="claude-sonnet-4-6",
+        response = client.chat.completions.create(
+            model="gpt-4o",
             max_tokens=512,
-            system=system_prompt,
-            messages=[{"role": "user", "content": opening_instruction}],
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": opening_instruction},
+            ],
         )
 
-        raw = response.content[0].text
+        raw = response.choices[0].message.content or ""
         parsed = _parse_response(raw)
 
         if "checklist" in parsed:
@@ -241,14 +243,13 @@ class AIInterviewer:
                 })
 
         client = _get_client()
-        response = client.messages.create(
-            model="claude-sonnet-4-6",
+        response = client.chat.completions.create(
+            model="gpt-4o",
             max_tokens=512,
-            system=system_prompt,
-            messages=messages,
+            messages=[{"role": "system", "content": system_prompt}] + messages,
         )
 
-        raw = response.content[0].text
+        raw = response.choices[0].message.content or ""
         parsed = _parse_response(raw)
 
         if "checklist" in parsed:
@@ -287,14 +288,13 @@ Scores out of 10. Be honest and specific."""
         messages.append({"role": "user", "content": evaluation_prompt})
 
         client = _get_client()
-        response = client.messages.create(
-            model="claude-sonnet-4-6",
+        response = client.chat.completions.create(
+            model="gpt-4o",
             max_tokens=1024,
-            system=system_prompt or "You are an expert interview evaluator.",
-            messages=messages,
+            messages=[{"role": "system", "content": system_prompt or "You are an expert interview evaluator."}] + messages,
         )
 
-        raw = response.content[0].text
+        raw = response.choices[0].message.content or ""
         parsed = _parse_response(raw)
 
         self._system_prompts.pop(session_id, None)
