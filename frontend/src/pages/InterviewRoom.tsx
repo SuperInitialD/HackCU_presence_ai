@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Mic, MicOff, Send, Video, VideoOff, ChevronRight, AlertTriangle } from 'lucide-react';
+import { Mic, MicOff, Send, Video, VideoOff, ChevronRight, AlertTriangle, Volume2 } from 'lucide-react';
 import { getCompany } from '../components/CompanyConfig';
 import { useFaceAnalysis } from '../hooks/useFaceAnalysis';
 import { respond, transcribeAudio } from '../api/client';
@@ -60,6 +60,35 @@ const InterviewRoom: React.FC = () => {
   const isProcessingAudioRef = useRef(false);
   const isThinkingRef = useRef(false);
   const autoStartedForRef = useRef<string | null>(null);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const isSpeakingRef = useRef(false);
+
+  // Speak text using Web Speech API — returns a promise that resolves when done
+  const speak = useCallback((text: string): Promise<void> => {
+    return new Promise((resolve) => {
+      if (!window.speechSynthesis) { resolve(); return; }
+      window.speechSynthesis.cancel(); // stop anything currently playing
+      const utt = new SpeechSynthesisUtterance(text);
+      utt.rate = 0.95;
+      utt.pitch = 1.0;
+      utt.volume = 1.0;
+      // Pick a natural voice — prefer English
+      const voices = window.speechSynthesis.getVoices();
+      const preferred = voices.find(v =>
+        v.lang.startsWith('en') && (v.name.includes('Neural') || v.name.includes('Natural') || v.name.includes('Samantha') || v.name.includes('Google'))
+      ) || voices.find(v => v.lang.startsWith('en')) || voices[0];
+      if (preferred) utt.voice = preferred;
+      utt.onstart = () => { setIsSpeaking(true); isSpeakingRef.current = true; };
+      utt.onend = () => { setIsSpeaking(false); isSpeakingRef.current = false; resolve(); };
+      utt.onerror = () => { setIsSpeaking(false); isSpeakingRef.current = false; resolve(); };
+      window.speechSynthesis.speak(utt);
+    });
+  }, []);
+
+  // Stop speech on unmount
+  useEffect(() => {
+    return () => { window.speechSynthesis?.cancel(); };
+  }, []);
 
   useEffect(() => { isRecordingRef.current = isRecording; }, [isRecording]);
   useEffect(() => { isProcessingAudioRef.current = isProcessingAudio; }, [isProcessingAudio]);
@@ -103,7 +132,7 @@ const InterviewRoom: React.FC = () => {
     }
   }, [messages, isThinking]);
 
-  // Auto-start recording 1.5s after a new interviewer message appears
+  // Speak interviewer message then auto-start recording
   useEffect(() => {
     const lastMsg = messages[messages.length - 1];
     if (
@@ -114,7 +143,13 @@ const InterviewRoom: React.FC = () => {
 
     autoStartedForRef.current = lastMsg.id;
 
-    const timer = setTimeout(async () => {
+    const run = async () => {
+      // Speak the interviewer's message
+      await speak(lastMsg.content);
+
+      // Small gap after speech before mic opens
+      await new Promise(r => setTimeout(r, 400));
+
       if (isRecordingRef.current || isProcessingAudioRef.current || isThinkingRef.current) return;
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -129,10 +164,10 @@ const InterviewRoom: React.FC = () => {
       } catch {
         // Mic denied — user can click manually or use text input
       }
-    }, 1500);
+    };
 
-    return () => clearTimeout(timer);
-  }, [messages, isComplete]);
+    run();
+  }, [messages, isComplete, speak]);
 
   const currentQuestion = messages.filter(m => m.role === 'interviewer').at(-1)?.content || '';
 
@@ -240,6 +275,10 @@ const InterviewRoom: React.FC = () => {
 
   const startRecording = useCallback(async () => {
     if (isRecordingRef.current || isProcessingAudioRef.current || isThinkingRef.current) return;
+    // Stop any ongoing speech immediately when user wants to respond
+    window.speechSynthesis?.cancel();
+    setIsSpeaking(false);
+    isSpeakingRef.current = false;
     setTranscriptionError(false);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -329,7 +368,12 @@ const InterviewRoom: React.FC = () => {
             <div style={{ fontWeight: 700, color: '#e8e8f0', fontSize: 15 }}>{interviewerName}</div>
             <div style={{ fontSize: 12, color: '#555577', display: 'flex', alignItems: 'center', gap: 6 }}>
               <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#22c55e' }} />
-              Interview in progress — Question {questionCount + 1}
+              {isSpeaking ? (
+                <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <Volume2 size={11} style={{ color: companyConfig.accentColor }} />
+                  Speaking...
+                </span>
+              ) : `Interview in progress — Question ${questionCount + 1}`}
             </div>
           </div>
           {setup.company && (
